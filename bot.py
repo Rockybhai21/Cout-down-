@@ -87,18 +87,4 @@ async def main():
     await app.run_polling()
 
 if __name__ == "__main__":
-    try:
-        # Run the bot using asyncio.run() in a normal environment
-        asyncio.run(main())
-    except RuntimeError as e:
-        # Handle environments where the event loop is already running (e.g., Render)
-        if str(e) == "Cannot close a running event loop":
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If the loop is already running, create a task for main()
-                loop.create_task(main())
-            else:
-                # Otherwise, run the loop until main() completes
-                loop.run_until_complete(main())
-        else:
-            raise e
+    app.run()
