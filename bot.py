@@ -90,8 +90,8 @@ if __name__ == "__main__":
     import asyncio
 
     try:
-        asyncio.run(main())
-    except RuntimeError:
-        loop = asyncio.get_event_loop()
+        asyncio.run(main())  # Works in normal environments
+    except (RuntimeError, AttributeError):
+        loop = asyncio.new_event_loop()  # Fix for Render
+        asyncio.set_event_loop(loop)
         loop.run_until_complete(main())
-
