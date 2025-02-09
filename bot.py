@@ -87,4 +87,11 @@ async def main():
     await app.run_polling()
 
 if __name__ == "__main__":
-    app.run()
+    import asyncio
+
+    try:
+        asyncio.run(main())  # Works normally
+    except (RuntimeError, AttributeError):
+        loop = asyncio.new_event_loop()  # Fix for Render
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(main())
