@@ -89,9 +89,11 @@ async def main():
 if __name__ == "__main__":
     import asyncio
 
+    loop = asyncio.get_event_loop()
+
     try:
-        asyncio.run(main())  # Works normally
+        loop.run_until_complete(main())  # Runs the bot without closing the event loop
     except (RuntimeError, AttributeError):
-        loop = asyncio.new_event_loop()  # Fix for Render
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(main())
+        asyncio.set_event_loop(asyncio.new_event_loop())
+        asyncio.get_event_loop().run_until_complete(main())
+
