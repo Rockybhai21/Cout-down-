@@ -14,7 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Get Bot Token from Environment Variable
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+BOT_TOKEN = os.getenv("7207793925:AAG4XOsjvDDFIyeBOwNDL5mCcwmoEQ4WmQc")
 if not BOT_TOKEN:
     raise ValueError("Bot token is missing. Set TELEGRAM_BOT_TOKEN in environment variables.")
 
