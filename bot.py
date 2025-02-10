@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import re
+from flask import Flask
+import threading
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 
@@ -11,6 +13,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = "7207793925:AAFME_OkdkEMMcFd9PI7cuoP_ahAG9OHg7U"
+
+# Flask web server for Koyeb (Prevents health check failure)
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot is running!"
+
+def run_web():
+    app.run(host="0.0.0.0", port=8080)
+
+# Start Flask in a separate thread
+threading.Thread(target=run_web).start()
 
 # Store countdowns
 user_time = {}
@@ -36,11 +51,12 @@ def parse_time_input(text):
 
 # Function to start the bot
 async def start(update: Update, context: CallbackContext) -> None:
-    await update.message.reply_text("Send the duration (e.g., '2 hours 30 minutes'):")
+    if update.message:
+        await update.message.reply_text("Send the duration (e.g., '2 hours 30 minutes'):")
 
 # Handle user input for countdown
 async def countdown_input(update: Update, context: CallbackContext) -> None:
-    if update.message.chat.type != "private":  # Only respond when setting a countdown
+    if not update.message or update.message.chat is None:  # Prevent AttributeError
         return
     
     user_id = update.message.from_user.id
@@ -62,7 +78,6 @@ async def countdown_input(update: Update, context: CallbackContext) -> None:
 async def modify_time(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
-    
     await query.message.reply_text("Send the new duration (e.g., '1 hour 45 minutes'):")
 
 # Handle confirmation and start countdown
@@ -76,7 +91,6 @@ async def confirm_countdown(update: Update, context: CallbackContext) -> None:
         message = await query.message.reply_text(f"Countdown started for {format_time(countdown_time)}!")
         active_countdowns[user_id] = {"remaining": countdown_time, "message": message, "paused": False}
 
-        # Pin the countdown message
         try:
             await context.bot.pin_chat_message(chat_id=query.message.chat_id, message_id=message.message_id)
         except Exception as e:
@@ -112,8 +126,7 @@ async def countdown(user_id, context: CallbackContext):
         countdown_data["remaining"] = i
         await asyncio.sleep(1)
 
-        # Reminder alerts at key moments
-        if i in [3600, 600, 60, 10]:  # 1 hour, 10 min, 1 min, 10 sec left
+        if i in [3600, 600, 60, 10]:
             await context.bot.send_message(chat_id=message.chat_id, text=f"⏳ Reminder: {format_time(i)} remaining!")
 
         try:
