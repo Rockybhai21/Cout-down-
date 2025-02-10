@@ -1,11 +1,8 @@
 import asyncio
 import logging
 import re
-import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, CallbackContext, CallbackQueryHandler, MessageHandler, filters
-)
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 
 # Enable logging
 logging.basicConfig(
@@ -13,12 +10,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Get Bot Token from Environment Variable
-BOT_TOKEN = os.getenv("7207793925:AAG4XOsjvDDFIyeBOwNDL5mCcwmoEQ4WmQc")
-if not BOT_TOKEN:
-    raise ValueError("Bot token is missing. Set TELEGRAM_BOT_TOKEN in environment variables.")
+# Bot Token (Replace with your actual bot token)
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 
-# Function to parse time input
+# Store user input time
+user_time = {}
+
+# Function to parse custom time input like "1 hour 30 minutes"
 def parse_time_input(text):
     time_units = {
         "second": 1, "seconds": 1,
@@ -37,26 +35,17 @@ def parse_time_input(text):
     return total_seconds
 
 # Function to start the bot
-async def start(update: Update, context: CallbackContext):
-    keyboard = [[InlineKeyboardButton("Set Countdown", callback_data="set_countdown")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text("Welcome! Set a countdown below:", reply_markup=reply_markup)
-
-# Handle button clicks
-async def button(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "set_countdown":
-        await query.message.reply_text("Send the duration (e.g., '1 hour 30 minutes'):")
+async def start(update: Update, context: CallbackContext) -> None:
+    await update.message.reply_text("Send the duration (e.g., '2 hours 30 minutes'):")
 
 # Handle user input for countdown
-async def countdown_input(update: Update, context: CallbackContext):
+async def countdown_input(update: Update, context: CallbackContext) -> None:
+    user_id = update.message.from_user.id
     user_input = update.message.text
     countdown_time = parse_time_input(user_input)
 
     if countdown_time > 0:
+        user_time[user_id] = countdown_time
         keyboard = [[InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{countdown_time}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(f"You entered: {user_input}.\nConfirm countdown?", reply_markup=reply_markup)
@@ -64,35 +53,58 @@ async def countdown_input(update: Update, context: CallbackContext):
         await update.message.reply_text("Invalid time format. Try again.")
 
 # Handle confirmation and start countdown
-async def confirm_countdown(update: Update, context: CallbackContext):
+async def confirm_countdown(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
 
-    countdown_time = int(query.data.split("_")[1])
-    message = await query.message.reply_text(f"Countdown started for {countdown_time} seconds!")
+    user_id = query.from_user.id
+    if user_id in user_time:
+        countdown_time = user_time[user_id]
+        await query.message.reply_text(f"Countdown started for {format_time(countdown_time)}!")
+        await countdown(query, countdown_time)
+        del user_time[user_id]
 
-    previous_text = ""
-    for i in range(countdown_time, 0, -1):
+# Countdown function
+async def countdown(update: Update, seconds: int):
+    message = await update.message.reply_text(f"⏳ Countdown: {format_time(seconds)} remaining...")
+
+    for i in range(seconds, 0, -1):
         await asyncio.sleep(1)
-        new_text = f"Countdown: {i} seconds remaining..."
+        new_text = f"⏳ Countdown: {format_time(i)} remaining..."
         
-        if new_text != previous_text:  # Avoid unnecessary edits
-            try:
-                await message.edit_text(new_text)
-                previous_text = new_text
-            except Exception as e:
-                logger.warning(f"Error updating countdown: {e}")
+        try:
+            await message.edit_text(new_text)
+        except Exception as e:
+            logger.warning(f"Error updating countdown: {e}")
 
-    await message.edit_text("⏳ Countdown finished!")
+    await message.edit_text("✅ Countdown Finished!")
+
+# Function to format time in days, hours, minutes, seconds
+def format_time(seconds):
+    days = seconds // 86400
+    hours = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    sec = seconds % 60
+
+    time_str = ""
+    if days > 0:
+        time_str += f"{days}d "
+    if hours > 0:
+        time_str += f"{hours}h "
+    if minutes > 0:
+        time_str += f"{minutes}m "
+    if sec > 0 or time_str == "":
+        time_str += f"{sec}s"
+
+    return time_str.strip()
 
 # Run bot
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button, pattern="^set_countdown$"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
     app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))  # Handle time input
 
     app.run_polling()
 
