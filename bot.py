@@ -50,7 +50,7 @@ async def countdown_input(update: Update, context: CallbackContext) -> None:
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(f"You entered: {user_input}.\nConfirm countdown?", reply_markup=reply_markup)
     else:
-        await update.message.reply_text("Invalid time format. Try again.")
+        await update.message.chat.send_message("Invalid time format. Try again.")
 
 # Handle confirmation and start countdown
 async def confirm_countdown(update: Update, context: CallbackContext) -> None:
