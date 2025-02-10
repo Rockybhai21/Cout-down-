@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 import os
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -10,14 +10,14 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 
-async def start(update: Update, context: CallbackContext):
+async def start(update: Update, context):
     keyboard = [
         [InlineKeyboardButton("Set Countdown", callback_data="set_time")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Welcome! Set a countdown below:", reply_markup=reply_markup)
 
-async def button_handler(update: Update, context: CallbackContext):
+async def button_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
 
@@ -57,3 +57,19 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# 🚀 Keep Koyeb Service Alive (Port 8080)
+from flask import Flask
+import threading
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot is running!"
+
+def run_web():
+    app.run(host="0.0.0.0", port=8080)
+
+# Run Flask web server in a separate thread
+threading.Thread(target=run_web).start()
