@@ -99,7 +99,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+    def some_function():
         state = "Paused ⏸️" if active_countdowns[user_id]["paused"] else "Resumed ▶️"
+
         await query.message.edit_text(f"Countdown {state}!\n⏳ {format_time(active_countdowns[user_id]['remaining'])} remaining...")
 
 # Countdown function
