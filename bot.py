@@ -1,75 +1,96 @@
 import asyncio
 import logging
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler
-import os
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, CallbackContext
 
-TOKEN = os.getenv("BOT_TOKEN")
+# Enable logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO
-)
+# Replace with your bot token
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 
-async def start(update: Update, context):
-    keyboard = [
-        [InlineKeyboardButton("Set Countdown", callback_data="set_time")]
-    ]
+# Stores user-selected time
+user_time = {}
+
+async def start(update: Update, context: CallbackContext) -> None:
+    keyboard = [[InlineKeyboardButton("Set Countdown", callback_data="set_time")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Welcome! Set a countdown below:", reply_markup=reply_markup)
 
-async def button_handler(update: Update, context):
+async def set_time(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("1 min", callback_data="time_60"), InlineKeyboardButton("5 min", callback_data="time_300")],
+        [InlineKeyboardButton("30 min", callback_data="time_1800"), InlineKeyboardButton("1 hour", callback_data="time_3600")],
+        [InlineKeyboardButton("Custom", callback_data="custom_time")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text("Select the countdown time:", reply_markup=reply_markup)
 
-    if query.data == "set_time":
-        keyboard = [
-            [InlineKeyboardButton("10 Sec", callback_data="10"),
-             InlineKeyboardButton("30 Sec", callback_data="30")],
-            [InlineKeyboardButton("1 Min", callback_data="60"),
-             InlineKeyboardButton("5 Min", callback_data="300")],
-            [InlineKeyboardButton("1 Hour", callback_data="3600"),
-             InlineKeyboardButton("1 Day", callback_data="86400")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("Select Countdown Time:", reply_markup=reply_markup)
+async def confirm_time(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+    
+    selected_time = int(query.data.split("_")[1])
+    user_time[query.from_user.id] = selected_time
 
-    else:
-        countdown_time = int(query.data)
-        await query.message.reply_text(f"Countdown started for {countdown_time} seconds!")
-        await countdown(update, countdown_time)
+    keyboard = [
+        [InlineKeyboardButton("✅ Yes, Start", callback_data="start_countdown")],
+        [InlineKeyboardButton("❌ No, Cancel", callback_data="set_time")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(f"Confirm countdown: {format_time(selected_time)}", reply_markup=reply_markup)
+
+async def start_countdown(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    if user_id in user_time:
+        seconds = user_time[user_id]
+        await countdown(query, seconds)
 
 async def countdown(update: Update, seconds: int):
-    message = await update.effective_message.reply_text(f"Countdown: {seconds}s remaining...")
+    message = await update.message.reply_text(f"⏳ Countdown: {format_time(seconds)} remaining...")
+
     for i in range(seconds, 0, -1):
         await asyncio.sleep(1)
-        await message.edit_text(f"Countdown: {i}s remaining...")
+        try:
+            await message.edit_text(f"⏳ Countdown: {format_time(i)} remaining...")
+        except Exception:
+            pass  # Ignore errors if message deleted
 
-    await message.edit_text("⏳ Time's up!")
+    await message.edit_text("✅ Countdown Finished!")
+
+def format_time(seconds):
+    days = seconds // 86400
+    hours = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    sec = seconds % 60
+
+    time_str = ""
+    if days > 0:
+        time_str += f"{days}d "
+    if hours > 0:
+        time_str += f"{hours}h "
+    if minutes > 0:
+        time_str += f"{minutes}m "
+    if sec > 0 or time_str == "":
+        time_str += f"{sec}s"
+
+    return time_str.strip()
 
 def main():
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CallbackQueryHandler(set_time, pattern="set_time"))
+    app.add_handler(CallbackQueryHandler(confirm_time, pattern="time_\\d+"))
+    app.add_handler(CallbackQueryHandler(start_countdown, pattern="start_countdown"))
 
-    logging.info("Bot started...")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-
-# 🚀 Keep Koyeb Service Alive (Port 8080)
-from flask import Flask
-import threading
-
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "Bot is running!"
-
-def run_web():
-    app.run(host="0.0.0.0", port=8080)
-
-# Run Flask web server in a separate thread
-threading.Thread(target=run_web).start()
