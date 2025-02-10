@@ -10,7 +10,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = "7207793925:AAG4XOsjvDDFIyeBOwNDL5mCcwmoEQ4WmQc"
+BOT_TOKEN = "7207793925:AAFME_OkdkEMMcFd9PI7cuoP_ahAG9OHg7U"
 
 # Store countdowns
 user_time = {}
