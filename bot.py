@@ -1,8 +1,11 @@
 import asyncio
 import logging
 import re
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler
+from telegram.ext import (
+    Application, CommandHandler, CallbackContext, CallbackQueryHandler, MessageHandler, filters
+)
 
 # Enable logging
 logging.basicConfig(
@@ -10,10 +13,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Bot Token (Replace with your actual bot token)
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+# Get Bot Token from Environment Variable
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("Bot token is missing. Set TELEGRAM_BOT_TOKEN in environment variables.")
 
-# Function to parse custom time input like "1 hour 30 minutes"
+# Function to parse time input
 def parse_time_input(text):
     time_units = {
         "second": 1, "seconds": 1,
@@ -66,14 +71,17 @@ async def confirm_countdown(update: Update, context: CallbackContext):
     countdown_time = int(query.data.split("_")[1])
     message = await query.message.reply_text(f"Countdown started for {countdown_time} seconds!")
 
+    previous_text = ""
     for i in range(countdown_time, 0, -1):
         await asyncio.sleep(1)
         new_text = f"Countdown: {i} seconds remaining..."
         
-        try:
-            await message.edit_text(new_text)
-        except Exception as e:
-            logger.warning(f"Error updating countdown: {e}")
+        if new_text != previous_text:  # Avoid unnecessary edits
+            try:
+                await message.edit_text(new_text)
+                previous_text = new_text
+            except Exception as e:
+                logger.warning(f"Error updating countdown: {e}")
 
     await message.edit_text("⏳ Countdown finished!")
 
@@ -82,9 +90,9 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(CallbackQueryHandler(button, pattern="^set_countdown$"))
     app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+"))
-    app.add_handler(CommandHandler("countdown", countdown_input))  # Handles custom duration
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))  # Handle time input
 
     app.run_polling()
 
