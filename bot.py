@@ -1,74 +1,103 @@
 import asyncio
+import logging
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 
-TOKEN = "7207793925:AAFME_OkdkEMMcFd9PI7cuoP_ahAG9OHg7U"
+TOKEN = "YOUR_BOT_TOKEN"
+STICKER_ID = "CAACAgUAAxkBAAEKVaxlCWGs1Ri6ti45xliLiUeweCnu4AACBAADwSQxMYnlHW4Ls8gQMAQ"
 
-# Format time nicely
+# Store countdowns and channels
+user_time = {}
+active_countdowns = {}
+managed_channels = {}
+
+# Format time function
 def format_time(seconds):
     days, remainder = divmod(seconds, 86400)
     hours, remainder = divmod(remainder, 3600)
     minutes, seconds = divmod(remainder, 60)
-    time_str = f"{days}d {hours}h {minutes}m {seconds}s" if days else f"{hours}h {minutes}m {seconds}s" if hours else f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
-    return time_str
+    return f"{days}d {hours}h {minutes}m {seconds}s" if days else f"{hours}h {minutes}m {seconds}s" if hours else f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
 
 # Start command
 async def start(update: Update, context: CallbackContext):
-    keyboard = [[InlineKeyboardButton("Set Countdown", callback_data="set_countdown")]]
+    keyboard = [[InlineKeyboardButton("⏳ Set Countdown", callback_data="set_countdown")],
+                [InlineKeyboardButton("📢 Manage Channels", callback_data="manage_channels")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Welcome! Set a countdown below:", reply_markup=reply_markup)
+    await update.message.reply_text("Welcome! Choose an option:", reply_markup=reply_markup)
 
-# Handle countdown button press
+# Handle button presses
 async def button(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
+
     if query.data == "set_countdown":
         await query.message.edit_text("Enter the countdown duration (e.g., '2 hours 30 minutes'):")
+    
+    elif query.data == "manage_channels":
+        if managed_channels:
+            buttons = [[InlineKeyboardButton(name, callback_data=f"channel_{chat_id}")]
+                       for chat_id, name in managed_channels.items()]
+            reply_markup = InlineKeyboardMarkup(buttons)
+            await query.message.edit_text("📢 Select a channel to manage:", reply_markup=reply_markup)
+        else:
+            await query.message.edit_text("No channels added. Send a channel ID or forward a message from the channel.")
 
-# Get countdown duration
+# Handle user input for countdown
 async def countdown_input(update: Update, context: CallbackContext):
     user_input = update.message.text.lower()
     seconds = parse_time(user_input)
-    
+
     if seconds is None or seconds <= 0:
         await update.message.reply_text("Invalid time format! Please enter a valid duration.")
         return
-    
+
     keyboard = [
         [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{seconds}"),
          InlineKeyboardButton("✏️ Modify", callback_data="set_countdown")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(f"Set countdown for **{format_time(seconds)}**?", reply_markup=reply_markup, parse_mode="Markdown")
+    await update.message.reply_text(f"Set countdown for <b>{format_time(seconds)}</b>?", reply_markup=reply_markup, parse_mode="HTML")
 
 # Confirm and start countdown
 async def confirm(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
-    
+
     seconds = int(query.data.split("_")[1])
-    message = await query.message.edit_text(f"⏳ Countdown started for **{format_time(seconds)}**!")
-    
+    message = await query.message.edit_text(f"⏳ Countdown started for <b>{format_time(seconds)}</b>!", parse_mode="HTML")
+
     # Start countdown
-    sticker_msg = None
     for i in range(seconds, 0, -1):
         await asyncio.sleep(1)
         try:
-            await message.edit_text(f"⏳ Countdown: **{format_time(i)}** remaining...", parse_mode="Markdown")
-            
-            # Send sticker at 60 seconds left
-            if i == 60:
-                sticker_msg = await message.reply_sticker("-CAACAgUAAxkBAAJG4GeqNtesMkBqm32bkFRZN97PYCVfAAJhFQACi3hQVdJzsKgobr94HgQ")
+            await message.edit_text(f"⏳ Countdown: <b>{format_time(i)}</b> remaining...", parse_mode="HTML")
 
-            # Delete sticker when countdown ends
-            if i == 1 and sticker_msg:
+            # Send and delete sticker at 60 seconds left
+            if i == 60:
+                sticker_msg = await message.reply_sticker(STICKER_ID)
+                await asyncio.sleep(1)
                 await sticker_msg.delete()
 
         except Exception:
             break  # Stop editing if message is deleted
 
     # Send alert when countdown finishes
-    await message.reply_text("🚨 **Time's up!** 🚨", parse_mode="Markdown")
+    await message.reply_text("🚨 <b>Time's up!</b> 🚨", parse_mode="HTML")
+
+# Handle channel addition
+async def add_channel(update: Update, context: CallbackContext):
+    if update.message.forward_from_chat:
+        chat = update.message.forward_from_chat
+        managed_channels[chat.id] = chat.title
+        await update.message.reply_text(f"✅ Added channel: {chat.title}")
+    else:
+        try:
+            chat_id = int(update.message.text)
+            managed_channels[chat_id] = f"Channel {chat_id}"
+            await update.message.reply_text(f"✅ Added channel: {chat_id}")
+        except ValueError:
+            await update.message.reply_text("❌ Invalid input. Forward a message from the channel or enter a valid channel ID.")
 
 # Parse time input
 def parse_time(time_str):
@@ -90,76 +119,12 @@ def parse_time(time_str):
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add_channel", add_channel))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
     app.add_handler(CallbackQueryHandler(confirm, pattern=r"confirm_\d+"))
     
     print("Bot is running...")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
-    def some_function():
-        state = "Paused ⏸️" if active_countdowns[user_id]["paused"] else "Resumed ▶️"
-
-        await query.message.edit_text(f"Countdown {state}!\n⏳ {format_time(active_countdowns[user_id]['remaining'])} remaining...")
-
-# Countdown function
-async def countdown(user_id, context: CallbackContext):
-    countdown_data = active_countdowns.get(user_id)
-    if not countdown_data:
-        return
-
-    message = countdown_data["message"]
-
-    for i in range(countdown_data["remaining"], 0, -1):
-        if countdown_data["paused"]:
-            await asyncio.sleep(1)
-            continue
-
-        countdown_data["remaining"] = i
-        await asyncio.sleep(1)
-
-        if i in [3600, 600, 60, 10]:
-            await context.bot.send_message(chat_id=message.chat_id, text=f"⏳ Reminder: {format_time(i)} remaining!")
-
-        try:
-            await message.edit_text(f"⏳ Countdown: **{format_time(i)}** remaining...")
-        except Exception as e:
-            logger.warning(f"Error updating countdown: {e}")
-
-    await message.edit_text("✅ Countdown Finished!")
-    del active_countdowns[user_id]
-
-# Function to format time in days, hours, minutes, seconds
-def format_time(seconds):
-    days = seconds // 86400
-    hours = (seconds % 86400) // 3600
-    minutes = (seconds % 3600) // 60
-    sec = seconds % 60
-
-    time_str = ""
-    if days > 0:
-        time_str += f"{days}d "
-    if hours > 0:
-        time_str += f"{hours}h "
-    if minutes > 0:
-        time_str += f"{minutes}m "
-    if sec > 0 or time_str == "":
-        time_str += f"{sec}s"
-
-    return time_str.strip()
-
-# Run bot
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
-    app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+"))
-    app.add_handler(CallbackQueryHandler(modify_time, pattern="modify_time"))
-    app.add_handler(CallbackQueryHandler(pause_resume, pattern="pause_resume"))
-
     app.run_polling()
 
 if __name__ == "__main__":
