@@ -11,7 +11,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Bot Token (Replace with your actual bot token)
-TOKEN = "7207793925:AAG4XOsjvDDFIyeBOwNDL5mCcwmoEQ4WmQc"
+TOKEN = "7783239593:AAEFz1dVP_3qNnV_WaW6Uw_fiyvx1lFyYuc"
 
 # Store user input time
 user_time = {}
