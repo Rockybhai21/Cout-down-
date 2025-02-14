@@ -6,12 +6,18 @@ import os
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
+from flask import Flask
+import threading
+from dotenv import load_dotenv
 
-TOKEN = "7207793925:AAFME_OkdkEMMcFd9PI7cuoP_ahAG9OHg7U"
+# Load environment variables from .env file
+load_dotenv()
+
+TOKEN = os.getenv("TOKEN")
 STICKER_ID = "CAACAgUAAxkBAAEKVaxlCWGs1Ri6ti45xliLiUeweCnu4AACBAADwSQxMYnlHW4Ls8gQMAQ"
 COUNTDOWN_FILE = "countdowns.json"
 HISTORY_FILE = "history.json"
-ADMIN_IDS = [6947378236]  # Replace with actual admin user IDs
+ADMIN_IDS = [123456789]  # Replace with actual admin user IDs
 
 # Store countdowns and channels
 user_time = {}
@@ -184,6 +190,19 @@ def parse_time(time_str):
         except ValueError:
             return None
     return total_seconds if total_seconds > 0 else None
+
+# Flask app
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot is running!"
+
+def run_web():
+    app.run(host="0.0.0.0", port=8080)
+
+# Start Flask in a separate thread
+threading.Thread(target=run_web).start()
 
 # Main function
 def main():
