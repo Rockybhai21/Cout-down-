@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 import os
+import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, CallbackContext
 from dotenv import load_dotenv
@@ -19,6 +20,24 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 # Store user input time and active countdowns
 user_time = {}
 active_countdowns = {}
+
+# Fun facts and quotes
+FUN_FACTS = [
+    "Did you know? The first computer programmer was a woman named Ada Lovelace in the 1840s! 💻",
+    "Fun fact: The longest recorded countdown was over 50 years for a NASA mission! 🚀",
+    "Here's a fact: The first text message ever sent was 'Merry Christmas' in 1992. 📱",
+    "Did you know? The first website is still online: http://info.cern.ch 🌐",
+    "Fun fact: The first computer mouse was made of wood! 🖱️",
+    "Here's a fact: The first video ever uploaded to YouTube was 'Me at the zoo' in 2005. 🎥",
+]
+
+QUOTES = [
+    "Time is what we want most, but what we use worst. – William Penn ⏳",
+    "The future depends on what you do today. – Mahatma Gandhi 🌟",
+    "Time flies over us, but leaves its shadow behind. – Nathaniel Hawthorne 🕰️",
+    "The two most powerful warriors are patience and time. – Leo Tolstoy ⏳",
+    "Lost time is never found again. – Benjamin Franklin ⏰",
+]
 
 # Function to parse custom time input like "1 hour 30 minutes"
 def parse_time_input(text):
@@ -38,7 +57,14 @@ def format_time(seconds):
 
 # Function to start the bot
 async def start(update: Update, context: CallbackContext) -> None:
-    await update.message.reply_text("Send the duration (e.g., '2 hours 30 minutes'):")
+    # Send a welcome message with a fun fact or quote
+    welcome_message = (
+        "👋 Welcome to the Countdown Bot!\n\n"
+        "I can help you set countdowns for any duration. Just send me the time (e.g., '2 hours 30 minutes').\n\n"
+        f"💡 Fun Fact: {random.choice(FUN_FACTS)}\n\n"
+        f"📜 Quote of the Day: {random.choice(QUOTES)}"
+    )
+    await update.message.reply_text(welcome_message)
 
 # Handle user input for countdown
 async def countdown_input(update: Update, context: CallbackContext) -> None:
@@ -108,46 +134,6 @@ async def countdown(user_id):
         del active_countdowns[user_id]
 
 # Handle pause callback
-async def pause_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    if user_id in active_countdowns:
-        active_countdowns[user_id]["paused"] = True
-        await query.message.reply_text("⏸ Countdown paused.")
-
-# Handle resume callback
-async def resume_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    if user_id in active_countdowns:
-        active_countdowns[user_id]["paused"] = False
-        await query.message.reply_text("▶ Countdown resumed.")
-
-# Handle cancel callback
-async def cancel_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    if user_id in active_countdowns:
-        del active_countdowns[user_id]
-        await query.message.reply_text("❌ Countdown cancelled.")
-
-# Run bot
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
-    app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+"))
-    app.add_handler(CallbackQueryHandler(modify_countdown, pattern="modify"))
-    app.add_handler(CallbackQueryHandler(pause_countdown, pattern="pause"))
-    app.add_handler(CallbackQueryHandler(resume_countdown, pattern="resume"))
-    app.add_handler(CallbackQueryHandler(cancel_countdown, pattern="cancel"))
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()# Handle pause callback
 async def pause_countdown(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
