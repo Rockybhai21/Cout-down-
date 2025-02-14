@@ -1,29 +1,44 @@
 import asyncio
 import json
 import os
+import sqlite3
+import logging
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, CallbackContext
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
-
 TOKEN = os.getenv("TOKEN")
 STICKER_ID = "CAACAgUAAxkBAAEKVaxlCWGs1Ri6ti45xliLiUeweCnu4AACBAADwSQxMYnlHW4Ls8gQMAQ"
-MANAGED_CHATS_FILE = "managed_chats.json"
+DB_FILE = "countdowns.db"
+AUTHORIZED_CHAT_IDS = json.loads(os.getenv("AUTHORIZED_CHAT_IDS", "[]"))
 
-# Load managed chats (groups/channels)
-def load_managed_chats():
-    if os.path.exists(MANAGED_CHATS_FILE):
-        with open(MANAGED_CHATS_FILE, "r") as file:
-            return json.load(file)
-    return {}
+# Enable logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Save managed chats
-def save_managed_chats(chats):
-    with open(MANAGED_CHATS_FILE, "w") as file:
-        json.dump(chats, file)
+# Initialize Database
+conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS countdowns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chat_id INTEGER,
+        message_id INTEGER,
+        user_id INTEGER,
+        duration INTEGER,
+        remaining INTEGER,
+        paused INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+""")
+conn.commit()
+
+# Function to check if a chat is authorized
+def is_authorized(chat_id):
+    return chat_id in AUTHORIZED_CHAT_IDS
 
 # Format time function
 def format_time(seconds):
@@ -36,7 +51,6 @@ def format_time(seconds):
 def parse_time(time_str):
     time_units = {"hour": 3600, "minute": 60, "second": 1}
     total_seconds = 0
-
     parts = time_str.split()
     for i in range(0, len(parts) - 1, 2):
         try:
@@ -50,63 +64,83 @@ def parse_time(time_str):
 
 # Start command
 async def start(update: Update, context: CallbackContext):
-    keyboard = [
-        [InlineKeyboardButton("⏳ Set Countdown", callback_data="set_countdown")],
-        [InlineKeyboardButton("📢 Manage Chats", callback_data="manage_chats")]
-    ]
+    chat_id = update.message.chat_id
+    if not is_authorized(chat_id):
+        await update.message.reply_text("❌ This chat is not authorized to use the bot.")
+        return
+    keyboard = [[InlineKeyboardButton("⏳ Start Countdown", callback_data="set_countdown")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Welcome! Choose an option:", reply_markup=reply_markup)
+    await update.message.reply_text("Welcome! Click below to start a countdown:", reply_markup=reply_markup)
 
-# Handle button presses
+# Handle button clicks
 async def button(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
-
     if query.data == "set_countdown":
         await query.message.edit_text("Enter the countdown duration (e.g., '2 hours 30 minutes'):")
-    elif query.data == "manage_chats":
-        await query.message.edit_text("Send the chat ID to link it.")
+    elif query.data.startswith("confirm_"):
+        await confirm_countdown(update, context)
 
-# Link a chat by ID
-async def link_chat_by_id(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    try:
-        chat_id = int(update.message.text)
-        managed_chats = load_managed_chats()
-        if str(user_id) not in managed_chats:
-            managed_chats[str(user_id)] = []
-        managed_chats[str(user_id)].append({"chat_id": chat_id, "title": f"Chat {chat_id}"})
-        save_managed_chats(managed_chats)
-        await update.message.reply_text(f"✅ Linked chat: {chat_id}")
-    except ValueError:
-        await update.message.reply_text("❌ Invalid input. Please enter a valid chat ID.")
+# Handle countdown input
+async def countdown_input(update: Update, context: CallbackContext):
+    chat_id = update.message.chat_id
+    if not is_authorized(chat_id):
+        await update.message.reply_text("❌ This chat is not authorized to use the bot.")
+        return
+    
+    user_input = update.message.text.lower()
+    seconds = parse_time(user_input)
+    user_id = update.message.from_user.id
 
-# Show linked chats
-async def show_linked_chats(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    managed_chats = load_managed_chats()
-    if str(user_id) in managed_chats and managed_chats[str(user_id)]:
-        chats_list = "\n".join([f"{chat['title']} (ID: {chat['chat_id']})" for chat in managed_chats[str(user_id)]])
-        await update.message.reply_text(f"📢 Your linked chats:\n{chats_list}")
-    else:
-        await update.message.reply_text("❌ You have no linked chats.")
-
-# Start a countdown for a linked chat
-async def start_chat_countdown(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    managed_chats = load_managed_chats()
-    if str(user_id) not in managed_chats or not managed_chats[str(user_id)]:
-        await update.message.reply_text("❌ You have no linked chats.")
+    if seconds is None or seconds <= 0:
+        await update.message.reply_text("❌ Invalid time format! Please enter a valid duration.")
         return
 
-    # Ask the user to select a chat
-    keyboard = [[InlineKeyboardButton(chat["title"], callback_data=f"start_countdown_{chat['chat_id']}")]
-                for chat in managed_chats[str(user_id)]]
+    keyboard = [[InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{user_id}_{seconds}")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("📢 Select a chat to start the countdown:", reply_markup=reply_markup)
+    await update.message.reply_text(f"Set countdown for <b>{format_time(seconds)}</b>?", reply_markup=reply_markup, parse_mode="HTML")
 
-# Handle countdown input for a chat
-async def chat_countdown_input(update: Update, context: CallbackContext):
+# Confirm and start countdown
+async def confirm_countdown(update: Update, context: CallbackContext):
+    query = update.callback_query
+    chat_id, user_id, seconds = map(int, query.data.split("_")[1:])
+    if not is_authorized(chat_id):
+        await query.message.reply_text("❌ This chat is not authorized to use the bot.")
+        return
+    
+    await query.answer()
+    message = await query.message.reply_text(f"⏳ Countdown started for <b>{format_time(seconds)}</b>!", parse_mode="HTML")
+    await context.bot.pin_chat_message(chat_id, message.message_id)
+
+    cursor.execute("INSERT INTO countdowns (chat_id, message_id, user_id, duration, remaining, paused) VALUES (?, ?, ?, ?, ?, 0)", (chat_id, message.message_id, user_id, seconds, seconds))
+    conn.commit()
+
+    for i in range(seconds, 0, -1):
+        cursor.execute("SELECT paused FROM countdowns WHERE message_id = ?", (message.message_id,))
+        paused = cursor.fetchone()
+        if paused and paused[0] == 1:
+            await asyncio.sleep(5)
+            continue
+        await asyncio.sleep(1)
+        try:
+            await message.edit_text(f"⏳ Countdown: <b>{format_time(i)}</b> remaining...", parse_mode="HTML")
+        except:
+            break
+    await message.reply_text("🚨 <b>Time's up!</b> 🚨", parse_mode="HTML")
+    cursor.execute("DELETE FROM countdowns WHERE message_id = ?", (message.message_id,))
+    conn.commit()
+
+# Main function
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
+    print("Bot is running...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
     user_input = update.message.text.lower()
     seconds = parse_time(user_input)
 
