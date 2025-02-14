@@ -10,7 +10,7 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Bot Token from environment variable (Koyeb)
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("7207793925:AAHQh3mHEtNpdKtfWwAKPxU6cNTjjROAD4E")
 
 # Store user input time
 user_time = {}
