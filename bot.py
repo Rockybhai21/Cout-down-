@@ -147,4 +147,44 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
+    main()# Handle pause callback
+async def pause_countdown(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    if user_id in active_countdowns:
+        active_countdowns[user_id]["paused"] = True
+        await query.message.reply_text("⏸ Countdown paused.")
+
+# Handle resume callback
+async def resume_countdown(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    if user_id in active_countdowns:
+        active_countdowns[user_id]["paused"] = False
+        await query.message.reply_text("▶ Countdown resumed.")
+
+# Handle cancel callback
+async def cancel_countdown(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    if user_id in active_countdowns:
+        del active_countdowns[user_id]
+        await query.message.reply_text("❌ Countdown cancelled.")
+
+# Run bot
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
+    app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+"))
+    app.add_handler(CallbackQueryHandler(modify_countdown, pattern="modify"))
+    app.add_handler(CallbackQueryHandler(pause_countdown, pattern="pause"))
+    app.add_handler(CallbackQueryHandler(resume_countdown, pattern="resume"))
+    app.add_handler(CallbackQueryHandler(cancel_countdown, pattern="cancel"))
+    app.run_polling()
+
+if __name__ == "__main__":
     main()
