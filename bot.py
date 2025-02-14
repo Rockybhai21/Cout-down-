@@ -4,15 +4,19 @@ import re
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, CallbackContext
+from dotenv import load_dotenv
 
 # Enable logging
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Load environment variables
+load_dotenv()
+
 # Bot Token from environment variable (Koyeb)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Store user input time
+# Store user input time and active countdowns
 user_time = {}
 active_countdowns = {}
 
@@ -25,6 +29,13 @@ def parse_time_input(text):
         total_seconds += int(amount) * time_units[unit.lower().rstrip('s')]
     return total_seconds if total_seconds > 0 else None
 
+# Function to format time in days, hours, minutes, seconds
+def format_time(seconds):
+    days, remainder = divmod(seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{days}d {hours}h {minutes}m {seconds}s" if days else f"{hours}h {minutes}m {seconds}s" if hours else f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
+
 # Function to start the bot
 async def start(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text("Send the duration (e.g., '2 hours 30 minutes'):")
@@ -36,8 +47,10 @@ async def countdown_input(update: Update, context: CallbackContext) -> None:
     countdown_time = parse_time_input(user_input)
     if countdown_time:
         user_time[user_id] = countdown_time
-        keyboard = [[InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{countdown_time}"),
-                     InlineKeyboardButton("✏ Modify", callback_data="modify")]]
+        keyboard = [
+            [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{countdown_time}"),
+             InlineKeyboardButton("✏ Modify", callback_data="modify")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(f"You entered: {user_input}.\nConfirm countdown or modify?", reply_markup=reply_markup)
     else:
@@ -57,13 +70,19 @@ async def confirm_countdown(update: Update, context: CallbackContext) -> None:
     if user_id in user_time:
         countdown_time = user_time[user_id]
         message = await query.message.reply_text(f"⏳ Countdown started for <b>{format_time(countdown_time)}</b>!", parse_mode="HTML")
+        
+        # Add control buttons for pause, resume, and cancel
+        keyboard = [
+            [InlineKeyboardButton("⏸ Pause", callback_data="pause"),
+             InlineKeyboardButton("▶ Resume", callback_data="resume"),
+             InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await message.reply_text("Control the countdown:", reply_markup=reply_markup)
+
+        # Store countdown data
         active_countdowns[user_id] = {"message": message, "remaining": countdown_time, "paused": False}
         await context.bot.pin_chat_message(query.message.chat_id, message.message_id)
-        keyboard = [[InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{user_id}"),
-                     InlineKeyboardButton("▶ Resume", callback_data=f"resume_{user_id}"),
-                     InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{user_id}")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await message.reply_text("Manage your countdown:", reply_markup=reply_markup)
         await countdown(user_id)
         del user_time[user_id]
 
@@ -84,42 +103,36 @@ async def countdown(user_id):
         except Exception as e:
             logger.warning(f"Error updating countdown: {e}")
             break
-    await message.reply_text("🎉 <b>Time's up!</b> 🎉\nHere’s something interesting: \nDid you know that the longest recorded countdown was over 50 years for a NASA mission? 🚀", parse_mode="HTML")
-    del active_countdowns[user_id]
+    if user_id in active_countdowns:
+        await message.reply_text("🎉 <b>Time's up!</b> 🎉\nHere’s something interesting: \nDid you know that the longest recorded countdown was over 50 years for a NASA mission? 🚀", parse_mode="HTML")
+        del active_countdowns[user_id]
 
-# Pause countdown
+# Handle pause callback
 async def pause_countdown(update: Update, context: CallbackContext):
     query = update.callback_query
-    user_id = int(query.data.split("_")[1])
+    await query.answer()
+    user_id = query.from_user.id
     if user_id in active_countdowns:
         active_countdowns[user_id]["paused"] = True
-        await query.answer("⏸ Countdown paused.")
-        await query.message.edit_text("⏸ Countdown paused.")
+        await query.message.reply_text("⏸ Countdown paused.")
 
-# Resume countdown
+# Handle resume callback
 async def resume_countdown(update: Update, context: CallbackContext):
     query = update.callback_query
-    user_id = int(query.data.split("_")[1])
+    await query.answer()
+    user_id = query.from_user.id
     if user_id in active_countdowns:
         active_countdowns[user_id]["paused"] = False
-        await query.answer("▶ Countdown resumed.")
-        await query.message.edit_text("▶ Countdown resumed.")
+        await query.message.reply_text("▶ Countdown resumed.")
 
-# Cancel countdown
+# Handle cancel callback
 async def cancel_countdown(update: Update, context: CallbackContext):
     query = update.callback_query
-    user_id = int(query.data.split("_")[1])
+    await query.answer()
+    user_id = query.from_user.id
     if user_id in active_countdowns:
         del active_countdowns[user_id]
-        await query.answer("❌ Countdown cancelled.")
-        await query.message.edit_text("❌ Countdown cancelled.")
-
-# Function to format time in days, hours, minutes, seconds
-def format_time(seconds):
-    days, remainder = divmod(seconds, 86400)
-    hours, remainder = divmod(remainder, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    return f"{days}d {hours}h {minutes}m {seconds}s" if days else f"{hours}h {minutes}m {seconds}s" if hours else f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
+        await query.message.reply_text("❌ Countdown cancelled.")
 
 # Run bot
 def main():
@@ -128,9 +141,9 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
     app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+"))
     app.add_handler(CallbackQueryHandler(modify_countdown, pattern="modify"))
-    app.add_handler(CallbackQueryHandler(pause_countdown, pattern=r"pause_\d+"))
-    app.add_handler(CallbackQueryHandler(resume_countdown, pattern=r"resume_\d+"))
-    app.add_handler(CallbackQueryHandler(cancel_countdown, pattern=r"cancel_\d+"))
+    app.add_handler(CallbackQueryHandler(pause_countdown, pattern="pause"))
+    app.add_handler(CallbackQueryHandler(resume_countdown, pattern="resume"))
+    app.add_handler(CallbackQueryHandler(cancel_countdown, pattern="cancel"))
     app.run_polling()
 
 if __name__ == "__main__":
