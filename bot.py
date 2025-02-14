@@ -9,7 +9,7 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Bot Token (Replace with your actual bot token)
-TOKEN = "YOUR_BOT_TOKEN_HERE"
+TOKEN = "7783239593:AAEFz1dVP_3qNnV_WaW6Uw_fiyvx1lFyYuc"
 
 # Store user input time
 user_time = {}
