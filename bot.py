@@ -36,10 +36,8 @@ async def countdown_input(update: Update, context: CallbackContext) -> None:
     countdown_time = parse_time_input(user_input)
     if countdown_time:
         user_time[user_id] = countdown_time
-        keyboard = [
-            [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{countdown_time}"),
-             InlineKeyboardButton("✏ Modify", callback_data="modify")]
-        ]
+        keyboard = [[InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{countdown_time}"),
+                     InlineKeyboardButton("✏ Modify", callback_data="modify")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(f"You entered: {user_input}.\nConfirm countdown or modify?", reply_markup=reply_markup)
     else:
@@ -61,6 +59,11 @@ async def confirm_countdown(update: Update, context: CallbackContext) -> None:
         message = await query.message.reply_text(f"⏳ Countdown started for <b>{format_time(countdown_time)}</b>!", parse_mode="HTML")
         active_countdowns[user_id] = {"message": message, "remaining": countdown_time, "paused": False}
         await context.bot.pin_chat_message(query.message.chat_id, message.message_id)
+        keyboard = [[InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{user_id}"),
+                     InlineKeyboardButton("▶ Resume", callback_data=f"resume_{user_id}"),
+                     InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{user_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await message.reply_text("Manage your countdown:", reply_markup=reply_markup)
         await countdown(user_id)
         del user_time[user_id]
 
@@ -86,24 +89,30 @@ async def countdown(user_id):
 
 # Pause countdown
 async def pause_countdown(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
+    query = update.callback_query
+    user_id = int(query.data.split("_")[1])
     if user_id in active_countdowns:
         active_countdowns[user_id]["paused"] = True
-        await update.message.reply_text("⏸ Countdown paused.")
+        await query.answer("⏸ Countdown paused.")
+        await query.message.edit_text("⏸ Countdown paused.")
 
 # Resume countdown
 async def resume_countdown(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
+    query = update.callback_query
+    user_id = int(query.data.split("_")[1])
     if user_id in active_countdowns:
         active_countdowns[user_id]["paused"] = False
-        await update.message.reply_text("▶ Countdown resumed.")
+        await query.answer("▶ Countdown resumed.")
+        await query.message.edit_text("▶ Countdown resumed.")
 
 # Cancel countdown
 async def cancel_countdown(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
+    query = update.callback_query
+    user_id = int(query.data.split("_")[1])
     if user_id in active_countdowns:
         del active_countdowns[user_id]
-        await update.message.reply_text("❌ Countdown cancelled.")
+        await query.answer("❌ Countdown cancelled.")
+        await query.message.edit_text("❌ Countdown cancelled.")
 
 # Function to format time in days, hours, minutes, seconds
 def format_time(seconds):
@@ -119,9 +128,9 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
     app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+"))
     app.add_handler(CallbackQueryHandler(modify_countdown, pattern="modify"))
-    app.add_handler(CommandHandler("pause", pause_countdown))
-    app.add_handler(CommandHandler("resume", resume_countdown))
-    app.add_handler(CommandHandler("cancel", cancel_countdown))
+    app.add_handler(CallbackQueryHandler(pause_countdown, pattern=r"pause_\d+"))
+    app.add_handler(CallbackQueryHandler(resume_countdown, pattern=r"resume_\d+"))
+    app.add_handler(CallbackQueryHandler(cancel_countdown, pattern=r"cancel_\d+"))
     app.run_polling()
 
 if __name__ == "__main__":
