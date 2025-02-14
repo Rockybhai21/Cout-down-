@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, CallbackContext
 
@@ -8,8 +9,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Bot Token (Replace with your actual bot token)
-TOKEN = "7783239593:AAEFz1dVP_3qNnV_WaW6Uw_fiyvx1lFyYuc"
+# Bot Token from environment variable (Koyeb)
+TOKEN = os.getenv("KOYEB_TOKEN")
 
 # Store user input time
 user_time = {}
@@ -35,11 +36,20 @@ async def countdown_input(update: Update, context: CallbackContext) -> None:
     countdown_time = parse_time_input(user_input)
     if countdown_time:
         user_time[user_id] = countdown_time
-        keyboard = [[InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{countdown_time}")]]
+        keyboard = [
+            [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{countdown_time}"),
+             InlineKeyboardButton("✏ Modify", callback_data="modify")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(f"You entered: {user_input}.\nConfirm countdown?", reply_markup=reply_markup)
+        await update.message.reply_text(f"You entered: {user_input}.\nConfirm countdown or modify?", reply_markup=reply_markup)
     else:
         await update.message.reply_text("Invalid time format. Try again.")
+
+# Handle modification request
+async def modify_countdown(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.edit_text("Send the new duration (e.g., '1 hour 15 minutes'):")
 
 # Handle confirmation and start countdown
 async def confirm_countdown(update: Update, context: CallbackContext) -> None:
@@ -50,6 +60,7 @@ async def confirm_countdown(update: Update, context: CallbackContext) -> None:
         countdown_time = user_time[user_id]
         message = await query.message.reply_text(f"⏳ Countdown started for <b>{format_time(countdown_time)}</b>!", parse_mode="HTML")
         active_countdowns[user_id] = {"message": message, "remaining": countdown_time, "paused": False}
+        await context.bot.pin_chat_message(query.message.chat_id, message.message_id)
         await countdown(user_id)
         del user_time[user_id]
 
@@ -70,7 +81,7 @@ async def countdown(user_id):
         except Exception as e:
             logger.warning(f"Error updating countdown: {e}")
             break
-    await message.edit_text("✅ <b>Countdown Finished!</b>", parse_mode="HTML")
+    await message.reply_text("🎉 <b>Time's up!</b> 🎉\nHere’s something interesting: \nDid you know that the longest recorded countdown was over 50 years for a NASA mission? 🚀", parse_mode="HTML")
     del active_countdowns[user_id]
 
 # Pause countdown
@@ -107,6 +118,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
     app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+"))
+    app.add_handler(CallbackQueryHandler(modify_countdown, pattern="modify"))
     app.add_handler(CommandHandler("pause", pause_countdown))
     app.add_handler(CommandHandler("resume", resume_countdown))
     app.add_handler(CommandHandler("cancel", cancel_countdown))
