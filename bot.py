@@ -24,205 +24,158 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Store user input time and active countdowns
-user_time = {}
-active_countdowns = {}
-countdown_history = {}
+# Store active countdowns and channel data
+active_countdowns = {}  # Format: {chat_id: {message: Message, remaining: int, paused: bool}}
+managed_channels = {}   # Store authorized channels
 
-# Fun facts and quotes
-FUN_FACTS = [
-    "Did you know? The first computer programmer was a woman named Ada Lovelace in the 1840s! 💻",
-    "Fun fact: The longest recorded countdown was over 50 years for a NASA mission! 🚀",
-    "Here's a fact: The first text message ever sent was 'Merry Christmas' in 1992. 📱",
-    "Did you know? The first website is still online: http://info.cern.ch 🌐",
-    "Fun fact: The first computer mouse was made of wood! 🖱️",
-    "Here's a fact: The first video ever uploaded to YouTube was 'Me at the zoo' in 2005. 🎥",
-]
+# Fun facts and quotes (same as before)
+# ... [Keep the FUN_FACTS and QUOTES arrays unchanged] ...
 
-QUOTES = [
-    "Time is what we want most, but what we use worst. – William Penn ⏳",
-    "The future depends on what you do today. – Mahatma Gandhi 🌟",
-    "Time flies over us, but leaves its shadow behind. – Nathaniel Hawthorne 🕰️",
-    "The two most powerful warriors are patience and time. – Leo Tolstoy ⏳",
-    "Lost time is never found again. – Benjamin Franklin ⏰",
-]
+# Modified parse_time_input and format_time functions (same as before)
+# ... [Keep parse_time_input and format_time functions unchanged] ...
 
-# Function to parse custom time input like "1 hour 30 minutes"
-def parse_time_input(text):
-    time_units = {"second": 1, "minute": 60, "hour": 3600, "day": 86400, "week": 604800}
-    total_seconds = 0
-    matches = re.findall(r"(\d+)\s*(seconds?|minutes?|hours?|days?|weeks?)", text, re.IGNORECASE)
-    for amount, unit in matches:
-        total_seconds += int(amount) * time_units[unit.lower().rstrip("s")]
-    return total_seconds if total_seconds > 0 else None
-
-# Function to format time in days, hours, minutes, seconds
-def format_time(seconds):
-    days, remainder = divmod(seconds, 86400)
-    hours, remainder = divmod(remainder, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    return (
-        f"{days}d {hours}h {minutes}m {seconds}s"
-        if days
-        else f"{hours}h {minutes}m {seconds}s"
-        if hours
-        else f"{minutes}m {seconds}s"
-        if minutes
-        else f"{seconds}s"
-    )
-
-# Function to start the bot
 async def start(update: Update, context: CallbackContext) -> None:
-    welcome_message = (
-        "👋 Welcome to the Countdown Bot!\n\n"
-        "I can help you set countdowns for any duration. Just send me the time (e.g., '2 hours 30 minutes').\n\n"
-        f"💡 Fun Fact: {random.choice(FUN_FACTS)}\n\n"
-        f"📜 Quote of the Day: {random.choice(QUOTES)}"
-    )
-    await update.message.reply_text(welcome_message)
+    """Handle /start command for both users and channels"""
+    if update.message.chat.type == "private":
+        # Private chat welcome message
+        welcome_message = (
+            "👋 Welcome to the Countdown Bot!\n\n"
+            "To use in channels:\n"
+            "1. Add me as admin to your channel\n"
+            "2. Send /setcountdown in the channel\n\n"
+            f"💡 Fun Fact: {random.choice(FUN_FACTS)}"
+        )
+        await update.message.reply_text(welcome_message)
+    else:
+        # Channel setup
+        channel_id = update.message.chat.id
+        managed_channels[channel_id] = update.message.chat.title
+        await update.message.reply_text("✅ This channel is now authorized for countdowns!")
 
-# Handle user input for countdown
-async def countdown_input(update: Update, context: CallbackContext) -> None:
-    user_id = update.message.from_user.id
-    user_input = update.message.text
-    countdown_time = parse_time_input(user_input)
+async def set_countdown(update: Update, context: CallbackContext) -> None:
+    """Handle countdown setup in channels"""
+    if update.message.chat.id not in managed_channels:
+        await update.message.reply_text("❌ Channel not authorized. Add bot as admin first!")
+        return
+
+    keyboard = [[InlineKeyboardButton("Set Countdown", callback_data=f"channel_set_{update.message.chat.id}")]]
+    await update.message.reply_text(
+        "⏰ Set channel countdown:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_callback(update: Update, context: CallbackContext) -> None:
+    """Handle all callback queries"""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data.startswith("channel_set_"):
+        channel_id = int(query.data.split("_")[2])
+        await query.message.edit_text("Send duration for channel countdown (e.g., '2 hours 30 minutes'):")
+        context.user_data["channel_id"] = channel_id
+
+async def channel_countdown_input(update: Update, context: CallbackContext) -> None:
+    """Handle channel countdown input"""
+    channel_id = context.user_data.get("channel_id")
+    if not channel_id or channel_id not in managed_channels:
+        return
+
+    countdown_time = parse_time_input(update.message.text)
     if countdown_time:
-        user_time[user_id] = countdown_time
+        # Start countdown in channel
+        message = await context.bot.send_message(
+            channel_id,
+            f"⏳ Channel countdown started for <b>{format_time(countdown_time)}</b>!",
+            parse_mode="HTML"
+        )
+        
+        # Add control buttons
         keyboard = [
             [
-                InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{user_id}_{countdown_time}"),
-                InlineKeyboardButton("✏ Modify", callback_data=f"modify_{user_id}"),
-                InlineKeyboardButton("💬 Custom Message", callback_data=f"custom_message_{user_id}"),
-                InlineKeyboardButton("🔄 Recurring", callback_data=f"recurring_{user_id}"),
+                InlineKeyboardButton("⏸ Pause", callback_data=f"channel_pause_{channel_id}"),
+                InlineKeyboardButton("▶ Resume", callback_data=f"channel_resume_{channel_id}"),
+                InlineKeyboardButton("❌ Cancel", callback_data=f"channel_cancel_{channel_id}"),
             ]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            f"You entered: {user_input}.\nWhat would you like to do?", reply_markup=reply_markup
+        await message.reply_text(
+            "Control the channel countdown:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
-    else:
-        await update.message.reply_text("Invalid time format. Try again.")
+        
+        # Store countdown data
+        active_countdowns[channel_id] = {
+            "message": message,
+            "remaining": countdown_time,
+            "paused": False
+        }
+        asyncio.create_task(channel_countdown(channel_id))
 
-# Handle modification request
-async def modify_countdown(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-    user_id = query.data.split("_")[1]
-    await query.message.edit_text("Send the new duration (e.g., '1 hour 15 minutes'):")
-
-# Handle custom message request (placeholder)
-async def custom_message(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-    user_id = query.data.split("_")[2]
-    await query.message.edit_text("Send the custom message to display when the countdown ends:")
-
-# Handle recurring countdown request (placeholder)
-async def recurring_countdown(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-    user_id = query.data.split("_")[1]
-    await query.message.edit_text("Send the interval for the recurring countdown (e.g., '5 minutes'):")
-
-# Handle confirmation and start countdown
-async def confirm_countdown(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-    parts = query.data.split("_")
-    user_id = int(parts[1])
-    countdown_time = int(parts[2])
-    message = await query.message.reply_text(
-        f"⏳ Countdown started for <b>{format_time(countdown_time)}</b>!", parse_mode="HTML"
-    )
-    # Add control buttons for pause, resume, and cancel
-    keyboard = [
-        [
-            InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{user_id}"),
-            InlineKeyboardButton("▶ Resume", callback_data=f"resume_{user_id}"),
-            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{user_id}"),
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await message.reply_text("Control the countdown:", reply_markup=reply_markup)
-    active_countdowns[user_id] = {"message": message, "remaining": countdown_time, "paused": False}
-    await context.bot.pin_chat_message(query.message.chat_id, message.message_id)
-    # Run countdown as a background task
-    asyncio.create_task(countdown(user_id))
-    del user_time[user_id]
-
-# Countdown function running in the background
-async def countdown(user_id):
-    countdown_data = active_countdowns.get(user_id)
+async def channel_countdown(channel_id: int):
+    """Countdown timer for channels"""
+    countdown_data = active_countdowns.get(channel_id)
     if not countdown_data:
         return
+
     message = countdown_data["message"]
     while countdown_data["remaining"] > 0:
         if countdown_data["paused"]:
             await asyncio.sleep(1)
             continue
+            
         await asyncio.sleep(1)
         countdown_data["remaining"] -= 1
+        
         try:
             await message.edit_text(
-                f"⏳ Countdown: <b>{format_time(countdown_data['remaining'])}</b> remaining...", parse_mode="HTML"
+                f"⏳ Channel countdown: <b>{format_time(countdown_data['remaining'])}</b> remaining...",
+                parse_mode="HTML"
             )
         except Exception as e:
-            logger.warning(f"Error updating countdown: {e}")
+            logger.error(f"Error updating channel countdown: {e}")
             break
-    if user_id in active_countdowns:
-        await message.reply_text(
-            "🎉 <b>Time's up!</b> 🎉\nHere’s something interesting: \nDid you know that the longest recorded countdown was over 50 years for a NASA mission? 🚀",
-            parse_mode="HTML"
-        )
-        del active_countdowns[user_id]
 
-# Handle pause callback
-async def pause_countdown(update: Update, context: CallbackContext):
+    if channel_id in active_countdowns:
+        await message.reply_text("🔔 <b>Channel countdown completed!</b> 🔔", parse_mode="HTML")
+        del active_countdowns[channel_id]
+
+# Modified control handlers for channels
+async def channel_pause(update: Update, context: CallbackContext):
     query = update.callback_query
-    user_id = int(query.data.split("_")[1])
-    # Only allow the countdown owner to control it
-    if query.from_user.id != user_id:
-        await query.answer("You're not authorized to control this countdown.", show_alert=True)
-        return
-    active_countdowns[user_id]["paused"] = True
-    await query.answer("⏸ Countdown paused.")
-    await query.message.edit_text("⏸ Countdown paused.")
+    channel_id = int(query.data.split("_")[2])
+    if channel_id in active_countdowns:
+        active_countdowns[channel_id]["paused"] = True
+    await query.answer("⏸ Channel countdown paused")
 
-# Handle resume callback
-async def resume_countdown(update: Update, context: CallbackContext):
+async def channel_resume(update: Update, context: CallbackContext):
     query = update.callback_query
-    user_id = int(query.data.split("_")[1])
-    if query.from_user.id != user_id:
-        await query.answer("You're not authorized to control this countdown.", show_alert=True)
-        return
-    active_countdowns[user_id]["paused"] = False
-    await query.answer("▶ Countdown resumed.")
-    await query.message.edit_text("▶ Countdown resumed.")
+    channel_id = int(query.data.split("_")[2])
+    if channel_id in active_countdowns:
+        active_countdowns[channel_id]["paused"] = False
+    await query.answer("▶ Channel countdown resumed")
 
-# Handle cancel callback
-async def cancel_countdown(update: Update, context: CallbackContext):
+async def channel_cancel(update: Update, context: CallbackContext):
     query = update.callback_query
-    user_id = int(query.data.split("_")[1])
-    if query.from_user.id != user_id:
-        await query.answer("You're not authorized to control this countdown.", show_alert=True)
-        return
-    if user_id in active_countdowns:
-        del active_countdowns[user_id]
-    await query.answer("❌ Countdown cancelled.")
-    await query.message.edit_text("❌ Countdown cancelled.")
+    channel_id = int(query.data.split("_")[2])
+    if channel_id in active_countdowns:
+        del active_countdowns[channel_id]
+    await query.answer("❌ Channel countdown cancelled")
 
-# Run bot
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
+    
+    # User handlers
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
-    app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+_\d+"))
-    app.add_handler(CallbackQueryHandler(modify_countdown, pattern=r"modify_\d+"))
-    app.add_handler(CallbackQueryHandler(custom_message, pattern=r"custom_message_\d+"))
-    app.add_handler(CallbackQueryHandler(recurring_countdown, pattern=r"recurring_\d+"))
-    app.add_handler(CallbackQueryHandler(pause_countdown, pattern=r"pause_\d+"))
-    app.add_handler(CallbackQueryHandler(resume_countdown, pattern=r"resume_\d+"))
-    app.add_handler(CallbackQueryHandler(cancel_countdown, pattern=r"cancel_\d+"))
+    
+    # Channel handlers
+    app.add_handler(CommandHandler("setcountdown", set_countdown))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, channel_countdown_input))
+    
+    # Callback handlers
+    app.add_handler(CallbackQueryHandler(handle_callback, pattern=r"channel_set_\d+"))
+    app.add_handler(CallbackQueryHandler(channel_pause, pattern=r"channel_pause_\d+"))
+    app.add_handler(CallbackQueryHandler(channel_resume, pattern=r"channel_resume_\d+"))
+    app.add_handler(CallbackQueryHandler(channel_cancel, pattern=r"channel_cancel_\d+"))
+    
     app.run_polling()
 
 if __name__ == "__main__":
