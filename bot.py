@@ -55,7 +55,7 @@ def format_time(seconds):
     days, remainder = divmod(seconds, 86400)
     hours, remainder = divmod(remainder, 3600)
     minutes, seconds = divmod(remainder, 60)
-    return f"{days}d {hours}h {minutes}m {seconds}s" if days else f"{hours}h {minutes}m {seconds}s" if hours else f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
+    return f"<b>{days}d {hours}h {minutes}m {seconds}s</b>" if days else f"<b>{hours}h {minutes}m {seconds}s</b>" if hours else f"<b>{minutes}m {seconds}s</b>" if minutes else f"<b>{seconds}s</b>"
 
 # Start command
 async def start(update: Update, context: CallbackContext) -> None:
@@ -92,7 +92,7 @@ async def countdown_input(update: Update, context: CallbackContext) -> None:
             InlineKeyboardButton("✏ Modify", callback_data=f"modify_{chat_id}")
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(f"You entered: {user_input}.", reply_markup=reply_markup)
+        await update.message.reply_text(f"You entered: <b>{format_time(countdown_time)}</b>", parse_mode="HTML", reply_markup=reply_markup)
     else:
         await update.message.reply_text("Invalid time format. Try again.")
 
@@ -101,7 +101,7 @@ async def modify_countdown(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
     chat_id = int(query.data.split("_")[1])
-    await query.message.edit_text("Send the new duration (e.g., '1 hour 15 minutes'):")
+    await query.message.edit_text("Send the new countdown time:")
 
 # Confirm countdown
 async def confirm_countdown(update: Update, context: CallbackContext) -> None:
@@ -132,7 +132,6 @@ async def countdown(chat_id):
             await message.edit_text(f"⏳ Countdown: {format_time(countdown_data['remaining'])}", parse_mode="HTML")
         except Exception:
             break
-    await message.reply_text("🎉 Time's up! 🎉 Here’s a fun fact: " + random.choice(FUN_FACTS))
     del active_countdowns[chat_id]
 
 # Pause, Resume, Cancel Handlers
@@ -161,7 +160,7 @@ def main():
     app.add_handler(CommandHandler("add_channel", add_channel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
     app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+_\d+"))
-    app.add_handler(CallbackQueryHandler(modify_countdown, pattern="modify_\d+"))
+    app.add_handler(CallbackQueryHandler(modify_countdown, pattern=r"modify_\d+"))
     app.run_polling()
 
 if __name__ == "__main__":
