@@ -1,4 +1,3 @@
-import time
 import asyncio
 import logging
 import re
@@ -37,6 +36,11 @@ FUN_FACTS = [
     "Here's a fact: The first text message ever sent was 'Merry Christmas' in 1992. 📱",
 ]
 
+QUOTES = [
+    "Time is what we want most, but what we use worst. – William Penn ⏳",
+    "The future depends on what you do today. – Mahatma Gandhi 🌟",
+]
+
 # Parse time input
 def parse_time_input(text):
     time_units = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}
@@ -58,9 +62,24 @@ async def start(update: Update, context: CallbackContext) -> None:
     welcome_message = (
         "👋 Welcome to the Countdown Bot!\n\n"
         "I can help you set countdowns in PMs, groups, and channels.\n\n"
-        "To set a countdown, send me the duration (e.g., '2 hours 30 minutes')."
+        "To set a countdown, send me the duration (e.g., '2 hours 30 minutes').\n\n"
+        f"💡 Fun Fact: {random.choice(FUN_FACTS)}\n\n"
+        f"💛 Quote of the Day: {random.choice(QUOTES)}"
     )
     await update.message.reply_text(welcome_message)
+
+# Add authorized channel
+async def add_channel(update: Update, context: CallbackContext) -> None:
+    if not context.args:
+        await update.message.reply_text("Usage: /add_channel <channel_id>")
+        return
+    channel_id = context.args[0]
+    chat_member = await context.bot.get_chat_member(channel_id, update.message.from_user.id)
+    if chat_member.status not in [ChatMember.ADMINISTRATOR, ChatMember.CREATOR]:
+        await update.message.reply_text("Only admins can add channels.")
+        return
+    authorized_channels.add(channel_id)
+    await update.message.reply_text(f"✅ Channel {channel_id} authorized for countdowns.")
 
 # Handle countdown input
 async def countdown_input(update: Update, context: CallbackContext) -> None:
@@ -68,126 +87,105 @@ async def countdown_input(update: Update, context: CallbackContext) -> None:
     user_input = update.message.text
     countdown_time = parse_time_input(user_input)
     if countdown_time:
-        keyboard = [[
-            InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{countdown_time}"),
-            InlineKeyboardButton("✏ Modify", callback_data=f"modify_{chat_id}")
-        ]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(f"You entered: {format_time(countdown_time)}", parse_mode="HTML", reply_markup=reply_markup)
+        context.user_data["countdown_time"] = countdown_time
+        await update.message.reply_text("✅ Time set! Now send a custom message to display with the countdown (e.g., '5 minutes to quiz start').")
     else:
         await update.message.reply_text("Invalid time format. Try again.")
 
-# Modify countdown
-async def modify_countdown(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-    chat_id = int(query.data.split("_")[1])
-    await query.message.edit_text("Send the new countdown time:")
+# Set custom message
+async def set_custom_message(update: Update, context: CallbackContext) -> None:
+    chat_id = update.message.chat.id
+    custom_message = update.message.text
+
+    if "countdown_time" not in context.user_data:
+        await update.message.reply_text("❌ No countdown time found. Please enter a time first.")
+        return
+
+    countdown_time = context.user_data["countdown_time"]
+    context.user_data["custom_message"] = custom_message
+
+    # Show confirmation buttons
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{countdown_time}"),
+            InlineKeyboardButton("✏ Modify", callback_data=f"modify_{chat_id}"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        f"⏳ Countdown: {format_time(countdown_time)}\n📢 Message: <b>{custom_message}</b>\n\nDo you want to start the countdown?",
+        parse_mode="HTML",
+        reply_markup=reply_markup
+    )
 
 # Confirm countdown
 async def confirm_countdown(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
     chat_id, countdown_time = map(int, query.data.split("_")[1:])
-    message = await query.message.reply_text(f"⏳ Countdown started for {format_time(countdown_time)}!", parse_mode="HTML")
+    
+    custom_message = context.user_data.get("custom_message", "⏳ Countdown started!")
 
-    # Delay pinning the message by 5 seconds
-    await asyncio.sleep(5)
+    message = await query.message.reply_text(f"📢 <b>{custom_message}</b>\n⏳ Time: {format_time(countdown_time)}", parse_mode="HTML")
 
-    if chat_id in pinned_messages:
-        await context.bot.unpin_chat_message(chat_id, pinned_messages[chat_id])  # Unpin previous
-    pinned_messages[chat_id] = message.message_id
-    await context.bot.pin_chat_message(chat_id, message.message_id)  # Pin after 5s
-
-    # Start countdown
-    asyncio.create_task(countdown(chat_id))
     # Add control buttons
     keyboard = [
-        [InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{chat_id}"),
-         InlineKeyboardButton("▶ Resume", callback_data=f"resume_{chat_id}"),
-         InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{chat_id}")]
+        [
+            InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{chat_id}"),
+            InlineKeyboardButton("▶ Resume", callback_data=f"resume_{chat_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{chat_id}"),
+        ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await message.reply_text("Control the countdown:", reply_markup=reply_markup)
 
+    # Store countdown
     active_countdowns[chat_id] = {"message": message, "remaining": countdown_time, "paused": False}
+
+    # Delay pinning
+    await asyncio.sleep(5)
+    if chat_id in pinned_messages:
+        await context.bot.unpin_chat_message(chat_id, pinned_messages[chat_id])
+    pinned_messages[chat_id] = message.message_id
+    await context.bot.pin_chat_message(chat_id, message.message_id)
+
     asyncio.create_task(countdown(chat_id))
 
 # Countdown function
 async def countdown(chat_id):
-    """Accurate countdown timer that waits exactly 1 second per iteration."""
     countdown_data = active_countdowns.get(chat_id)
     if not countdown_data:
         return
 
     message = countdown_data["message"]
-    start_time = time.time()  # Record the start time
-
     while countdown_data["remaining"] > 0:
         if countdown_data["paused"]:
             await asyncio.sleep(1)
             continue
-
-        elapsed_time = time.time() - start_time
-        sleep_time = max(1 - (elapsed_time % 1), 0)  # Adjust sleep time to sync with real seconds
-
-        await asyncio.sleep(sleep_time)
+        await asyncio.sleep(1)
         countdown_data["remaining"] -= 1
-        start_time = time.time()  # Reset start time for the next second
-
         try:
-            await message.edit_text(
-                f"⏳ Countdown: {format_time(countdown_data['remaining'])}", parse_mode="HTML"
-            )
+            await message.edit_text(f"⏳ {format_time(countdown_data['remaining'])}", parse_mode="HTML")
         except Exception:
             break
+    del active_countdowns[chat_id]
 
-    # Notify when countdown ends
-    if chat_id in active_countdowns:
-        await message.reply_text("🎉 <b>Time's up!</b> 🎉", parse_mode="HTML")
-        del active_countdowns[chat_id]
-
-# Pause countdown
-async def pause_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    chat_id = int(query.data.split("_")[1])
-    if chat_id in active_countdowns:
-        active_countdowns[chat_id]["paused"] = True
-        await query.message.reply_text("⏸ Countdown paused.")
-
-# Resume countdown
-async def resume_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    chat_id = int(query.data.split("_")[1])
-    if chat_id in active_countdowns:
-        active_countdowns[chat_id]["paused"] = False
-        await query.message.reply_text("▶ Countdown resumed.")
-
-# Cancel countdown
-async def cancel_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    chat_id = int(query.data.split("_")[1])
-    if chat_id in active_countdowns:
-        del active_countdowns[chat_id]
-        await query.message.reply_text("❌ Countdown cancelled.")
+# Pause, Resume, Cancel Handlers
+async def pause_countdown(update: Update, context: CallbackContext): await update.callback_query.answer("⏸ Countdown paused")
+async def resume_countdown(update: Update, context: CallbackContext): await update.callback_query.answer("▶ Countdown resumed")
+async def cancel_countdown(update: Update, context: CallbackContext): await update.callback_query.answer("❌ Countdown cancelled")
 
 # Run bot
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
-
-    # Callback handlers
+    app.add_handler(CommandHandler("add_channel", add_channel))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, set_custom_message))
     app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+_\d+"))
-    app.add_handler(CallbackQueryHandler(modify_countdown, pattern=r"modify_\d+"))
     app.add_handler(CallbackQueryHandler(pause_countdown, pattern=r"pause_\d+"))
     app.add_handler(CallbackQueryHandler(resume_countdown, pattern=r"resume_\d+"))
     app.add_handler(CallbackQueryHandler(cancel_countdown, pattern=r"cancel_\d+"))
-
-    print("Bot is running...")
     app.run_polling()
 
 if __name__ == "__main__":
