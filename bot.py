@@ -96,12 +96,19 @@ async def countdown_input(update: Update, context: CallbackContext) -> None:
     else:
         await update.message.reply_text("Invalid time format. Try again.")
 
+# Modify countdown
+async def modify_countdown(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+    chat_id = int(query.data.split("_")[1])
+    await query.message.edit_text("Send the new duration (e.g., '1 hour 15 minutes'):")
+
 # Confirm countdown
 async def confirm_countdown(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
     chat_id, countdown_time = map(int, query.data.split("_")[1:])
-    message = await query.message.reply_text(f"⏳ Countdown started for <b>{format_time(countdown_time)}</b>!", parse_mode="HTML")
+    message = await query.message.reply_text(f"⏳ Countdown started for {format_time(countdown_time)}!", parse_mode="HTML")
     if chat_id in pinned_messages:
         await context.bot.unpin_chat_message(chat_id, pinned_messages[chat_id])
     pinned_messages[chat_id] = message.message_id
@@ -122,9 +129,10 @@ async def countdown(chat_id):
         await asyncio.sleep(1)
         countdown_data["remaining"] -= 1
         try:
-            await message.edit_text(f"⏳ Countdown: <b>{format_time(countdown_data['remaining'])}</b>", parse_mode="HTML")
+            await message.edit_text(f"⏳ Countdown: {format_time(countdown_data['remaining'])}", parse_mode="HTML")
         except Exception:
             break
+    await message.reply_text("🎉 Time's up! 🎉 Here’s a fun fact: " + random.choice(FUN_FACTS))
     del active_countdowns[chat_id]
 
 # Pause, Resume, Cancel Handlers
@@ -153,6 +161,7 @@ def main():
     app.add_handler(CommandHandler("add_channel", add_channel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
     app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+_\d+"))
+    app.add_handler(CallbackQueryHandler(modify_countdown, pattern="modify_\d+"))
     app.run_polling()
 
 if __name__ == "__main__":
