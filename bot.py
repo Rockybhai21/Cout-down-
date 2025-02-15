@@ -24,10 +24,8 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Store user input time and active countdowns
-user_time = {}
-active_countdowns = {}
-countdown_history = {}
+# Store active countdowns
+active_countdowns = {}  # Format: {chat_id: {message_id, remaining, paused, pinned_message_id}}
 
 # Fun facts and quotes
 FUN_FACTS = [
@@ -73,9 +71,11 @@ def format_time(seconds):
 
 # Function to start the bot
 async def start(update: Update, context: CallbackContext) -> None:
+    """Handle /start command for PMs, groups, and channels"""
     welcome_message = (
         "👋 Welcome to the Countdown Bot!\n\n"
-        "I can help you set countdowns for any duration. Just send me the time (e.g., '2 hours 30 minutes').\n\n"
+        "I can help you set countdowns in private chats, groups, and channels.\n\n"
+        "To set a countdown, send me the duration (e.g., '2 hours 30 minutes').\n\n"
         f"💡 Fun Fact: {random.choice(FUN_FACTS)}\n\n"
         f"📜 Quote of the Day: {random.choice(QUOTES)}"
     )
@@ -83,76 +83,51 @@ async def start(update: Update, context: CallbackContext) -> None:
 
 # Handle user input for countdown
 async def countdown_input(update: Update, context: CallbackContext) -> None:
-    user_id = update.message.from_user.id
+    """Handle countdown input in PMs, groups, and channels"""
+    chat_id = update.message.chat.id
     user_input = update.message.text
     countdown_time = parse_time_input(user_input)
     if countdown_time:
-        user_time[user_id] = countdown_time
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{user_id}_{countdown_time}"),
-                InlineKeyboardButton("✏ Modify", callback_data=f"modify_{user_id}"),
-                InlineKeyboardButton("💬 Custom Message", callback_data=f"custom_message_{user_id}"),
-                InlineKeyboardButton("🔄 Recurring", callback_data=f"recurring_{user_id}"),
-            ]
-        ]
+        keyboard = [[
+            InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{countdown_time}"),
+            InlineKeyboardButton("✏ Modify", callback_data=f"modify_{chat_id}")
+        ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
-            f"You entered: {user_input}.\nWhat would you like to do?", reply_markup=reply_markup
+            f"You entered: {user_input}.\nConfirm countdown or modify?", reply_markup=reply_markup
         )
     else:
         await update.message.reply_text("Invalid time format. Try again.")
 
-# Handle modification request
-async def modify_countdown(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-    user_id = query.data.split("_")[1]
-    await query.message.edit_text("Send the new duration (e.g., '1 hour 15 minutes'):")
-
-# Handle custom message request (placeholder)
-async def custom_message(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-    user_id = query.data.split("_")[2]
-    await query.message.edit_text("Send the custom message to display when the countdown ends:")
-
-# Handle recurring countdown request (placeholder)
-async def recurring_countdown(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-    user_id = query.data.split("_")[1]
-    await query.message.edit_text("Send the interval for the recurring countdown (e.g., '5 minutes'):")
-
 # Handle confirmation and start countdown
 async def confirm_countdown(update: Update, context: CallbackContext) -> None:
+    """Handle countdown confirmation in PMs, groups, and channels"""
     query = update.callback_query
     await query.answer()
     parts = query.data.split("_")
-    user_id = int(parts[1])
+    chat_id = int(parts[1])
     countdown_time = int(parts[2])
+    
+    # Unpin previous countdown
+    if chat_id in active_countdowns and "pinned_message_id" in active_countdowns[chat_id]:
+        try:
+            await context.bot.unpin_chat_message(chat_id, active_countdowns[chat_id]["pinned_message_id"])
+        except Exception:
+            pass
+    
     message = await query.message.reply_text(
         f"⏳ Countdown started for <b>{format_time(countdown_time)}</b>!", parse_mode="HTML"
     )
-    # Add control buttons for pause, resume, and cancel
-    keyboard = [
-        [
-            InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{user_id}"),
-            InlineKeyboardButton("▶ Resume", callback_data=f"resume_{user_id}"),
-            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{user_id}"),
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await message.reply_text("Control the countdown:", reply_markup=reply_markup)
-    active_countdowns[user_id] = {"message": message, "remaining": countdown_time, "paused": False}
-    await context.bot.pin_chat_message(query.message.chat_id, message.message_id)
-    # Run countdown as a background task
-    asyncio.create_task(countdown(user_id))
-    del user_time[user_id]
+    pinned_message = await context.bot.pin_chat_message(query.message.chat_id, message.message_id)
+    
+    # Store countdown data
+    active_countdowns[chat_id] = {"message": message, "remaining": countdown_time, "paused": False, "pinned_message_id": pinned_message.message_id}
+    asyncio.create_task(countdown(chat_id, context))
 
 # Countdown function running in the background
-async def countdown(user_id):
-    countdown_data = active_countdowns.get(user_id)
+async def countdown(chat_id: int, context: CallbackContext):
+    """Live countdown timer update"""
+    countdown_data = active_countdowns.get(chat_id)
     if not countdown_data:
         return
     message = countdown_data["message"]
@@ -164,52 +139,12 @@ async def countdown(user_id):
         countdown_data["remaining"] -= 1
         try:
             await message.edit_text(
-                f"⏳ Countdown: <b>{format_time(countdown_data['remaining'])}</b> remaining...", parse_mode="HTML"
+                f"⏳ Countdown: <b>{format_time(countdown_data['remaining'])}</b> remaining...",
+                parse_mode="HTML"
             )
-        except Exception as e:
-            logger.warning(f"Error updating countdown: {e}")
+        except:
             break
-    if user_id in active_countdowns:
-        await message.reply_text(
-            "🎉 <b>Time's up!</b> 🎉\nHere’s something interesting: \nDid you know that the longest recorded countdown was over 50 years for a NASA mission? 🚀",
-            parse_mode="HTML"
-        )
-        del active_countdowns[user_id]
-
-# Handle pause callback
-async def pause_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    user_id = int(query.data.split("_")[1])
-    # Only allow the countdown owner to control it
-    if query.from_user.id != user_id:
-        await query.answer("You're not authorized to control this countdown.", show_alert=True)
-        return
-    active_countdowns[user_id]["paused"] = True
-    await query.answer("⏸ Countdown paused.")
-    await query.message.edit_text("⏸ Countdown paused.")
-
-# Handle resume callback
-async def resume_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    user_id = int(query.data.split("_")[1])
-    if query.from_user.id != user_id:
-        await query.answer("You're not authorized to control this countdown.", show_alert=True)
-        return
-    active_countdowns[user_id]["paused"] = False
-    await query.answer("▶ Countdown resumed.")
-    await query.message.edit_text("▶ Countdown resumed.")
-
-# Handle cancel callback
-async def cancel_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    user_id = int(query.data.split("_")[1])
-    if query.from_user.id != user_id:
-        await query.answer("You're not authorized to control this countdown.", show_alert=True)
-        return
-    if user_id in active_countdowns:
-        del active_countdowns[user_id]
-    await query.answer("❌ Countdown cancelled.")
-    await query.message.edit_text("❌ Countdown cancelled.")
+    del active_countdowns[chat_id]
 
 # Run bot
 def main():
@@ -217,12 +152,6 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
     app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+_\d+"))
-    app.add_handler(CallbackQueryHandler(modify_countdown, pattern=r"modify_\d+"))
-    app.add_handler(CallbackQueryHandler(custom_message, pattern=r"custom_message_\d+"))
-    app.add_handler(CallbackQueryHandler(recurring_countdown, pattern=r"recurring_\d+"))
-    app.add_handler(CallbackQueryHandler(pause_countdown, pattern=r"pause_\d+"))
-    app.add_handler(CallbackQueryHandler(resume_countdown, pattern=r"resume_\d+"))
-    app.add_handler(CallbackQueryHandler(cancel_countdown, pattern=r"cancel_\d+"))
     app.run_polling()
 
 if __name__ == "__main__":
