@@ -88,31 +88,37 @@ async def countdown_input(update: Update, context: CallbackContext) -> None:
     countdown_time = parse_time_input(user_input)
 
     if countdown_time:
-        context.user_data["countdown_time"] = countdown_time  # ✅ Store countdown time
-        context.user_data["custom_message"] = None  # ✅ Reset custom message
-        
-        # Ask user if they want to add a custom message
+        # ✅ Store countdown time in user_data
+        context.user_data["countdown_time"] = countdown_time  
+        context.user_data["custom_message"] = None  
+
         keyboard = [
-            [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{countdown_time}")],
+            [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}")],
             [InlineKeyboardButton("💬 Add Custom Message", callback_data="set_message")],
             [InlineKeyboardButton("✏ Modify Time", callback_data="modify_time")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(
-            f"⏳ Countdown set for {format_time(countdown_time)}\nDo you want to confirm or add a custom message?",
+            f"⏳ Countdown set for <b>{format_time(countdown_time)}</b>\nDo you want to confirm or add a custom message?",
             parse_mode="HTML",
             reply_markup=reply_markup
         )
     else:
         await update.message.reply_text("❌ Invalid time format. Please enter a valid duration.")
 
-# Handle custom message input
+# Handle the button for adding a custom message
+async def custom_message_prompt(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("💬 Please enter the custom message you want to display with the countdown.")
+
+# Handle user input for custom message
 async def set_custom_message(update: Update, context: CallbackContext) -> None:
     user_data = context.user_data
     chat_id = update.message.chat.id
 
-    # ✅ Make sure countdown time is stored before accepting custom message
+    # ✅ Ensure countdown time exists before storing custom message
     if "countdown_time" not in user_data:
         await update.message.reply_text("❌ No countdown time found. Please enter a time first.")
         return
@@ -120,16 +126,45 @@ async def set_custom_message(update: Update, context: CallbackContext) -> None:
     user_data["custom_message"] = update.message.text  # ✅ Store custom message
 
     keyboard = [
-        [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{user_data['countdown_time']}")],
-        [InlineKeyboardButton("✏ Modify", callback_data="modify_time")]
+        [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}")],
+        [InlineKeyboardButton("✏ Modify Time", callback_data="modify_time")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"⏳ Countdown: {format_time(user_data['countdown_time'])}\n📢 Message: <b>{user_data['custom_message']}</b>\n\nConfirm to start?",
+        f"⏳ Countdown: <b>{format_time(user_data['countdown_time'])}</b>\n📢 Message: <b>{user_data['custom_message']}</b>\n\nConfirm to start?",
         parse_mode="HTML",
         reply_markup=reply_markup
     )
+
+# Handle countdown confirmation
+async def confirm_countdown(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat.id
+    user_data = context.user_data
+
+    # ✅ Ensure countdown time exists before starting
+    countdown_time = user_data.get("countdown_time")
+    if not countdown_time:
+        await query.message.reply_text("❌ No countdown time found. Please enter a time first.")
+        return
+
+    custom_message = user_data.get("custom_message", "Countdown started!")  
+
+    message = await query.message.reply_text(
+        f"⏳ {custom_message}\n<b>{format_time(countdown_time)}</b> remaining...",
+        parse_mode="HTML"
+    )
+
+    # ✅ Store active countdown
+    active_countdowns[chat_id] = {
+        "message": message,
+        "remaining": countdown_time,
+        "paused": False
+    }
+    asyncio.create_task(countdown(chat_id))
+
 
 
 # Confirm countdown
