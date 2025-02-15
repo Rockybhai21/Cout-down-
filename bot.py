@@ -87,7 +87,10 @@ async def countdown_input(update: Update, context: CallbackContext) -> None:
     user_input = update.message.text
     countdown_time = parse_time_input(user_input)
     if countdown_time:
-        keyboard = [[InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{countdown_time}")]]
+        keyboard = [[
+            InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{countdown_time}"),
+            InlineKeyboardButton("✏ Modify", callback_data=f"modify_{chat_id}")
+        ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(f"You entered: {user_input}.", reply_markup=reply_markup)
     else:
@@ -154,3 +157,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
