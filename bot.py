@@ -91,12 +91,16 @@ async def confirm_countdown(update: Update, context: CallbackContext) -> None:
     chat_id, countdown_time = map(int, query.data.split("_")[1:])
     message = await query.message.reply_text(f"⏳ Countdown started for {format_time(countdown_time)}!", parse_mode="HTML")
 
-    # Pin the new countdown message
-    if chat_id in pinned_messages:
-        await context.bot.unpin_chat_message(chat_id, pinned_messages[chat_id])
-    pinned_messages[chat_id] = message.message_id
-    await context.bot.pin_chat_message(chat_id, message.message_id)
+    # Delay pinning the message by 5 seconds
+    await asyncio.sleep(5)
 
+    if chat_id in pinned_messages:
+        await context.bot.unpin_chat_message(chat_id, pinned_messages[chat_id])  # Unpin previous
+    pinned_messages[chat_id] = message.message_id
+    await context.bot.pin_chat_message(chat_id, message.message_id)  # Pin after 5s
+
+    # Start countdown
+    asyncio.create_task(countdown(chat_id))
     # Add control buttons
     keyboard = [
         [InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{chat_id}"),
