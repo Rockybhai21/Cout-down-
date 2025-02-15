@@ -86,38 +86,51 @@ async def countdown_input(update: Update, context: CallbackContext) -> None:
     chat_id = update.message.chat.id
     user_input = update.message.text
     countdown_time = parse_time_input(user_input)
+
     if countdown_time:
-        context.user_data["countdown_time"] = countdown_time
-        await update.message.reply_text("✅ Time set! Now send a custom message to display with the countdown (e.g., '5 minutes to quiz start').")
+        context.user_data["countdown_time"] = countdown_time  # ✅ Store countdown time
+        context.user_data["custom_message"] = None  # ✅ Reset custom message
+        
+        # Ask user if they want to add a custom message
+        keyboard = [
+            [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{countdown_time}")],
+            [InlineKeyboardButton("💬 Add Custom Message", callback_data="set_message")],
+            [InlineKeyboardButton("✏ Modify Time", callback_data="modify_time")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            f"⏳ Countdown set for {format_time(countdown_time)}\nDo you want to confirm or add a custom message?",
+            parse_mode="HTML",
+            reply_markup=reply_markup
+        )
     else:
-        await update.message.reply_text("Invalid time format. Try again.")
+        await update.message.reply_text("❌ Invalid time format. Please enter a valid duration.")
 
-# Set custom message
+# Handle custom message input
 async def set_custom_message(update: Update, context: CallbackContext) -> None:
+    user_data = context.user_data
     chat_id = update.message.chat.id
-    custom_message = update.message.text
 
-    if "countdown_time" not in context.user_data:
+    # ✅ Make sure countdown time is stored before accepting custom message
+    if "countdown_time" not in user_data:
         await update.message.reply_text("❌ No countdown time found. Please enter a time first.")
         return
 
-    countdown_time = context.user_data["countdown_time"]
-    context.user_data["custom_message"] = custom_message
+    user_data["custom_message"] = update.message.text  # ✅ Store custom message
 
-    # Show confirmation buttons
     keyboard = [
-        [
-            InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{countdown_time}"),
-            InlineKeyboardButton("✏ Modify", callback_data=f"modify_{chat_id}"),
-        ]
+        [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{user_data['countdown_time']}")],
+        [InlineKeyboardButton("✏ Modify", callback_data="modify_time")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await update.message.reply_text(
-        f"⏳ Countdown: {format_time(countdown_time)}\n📢 Message: <b>{custom_message}</b>\n\nDo you want to start the countdown?",
+        f"⏳ Countdown: {format_time(user_data['countdown_time'])}\n📢 Message: <b>{user_data['custom_message']}</b>\n\nConfirm to start?",
         parse_mode="HTML",
         reply_markup=reply_markup
     )
+
 
 # Confirm countdown
 async def confirm_countdown(update: Update, context: CallbackContext) -> None:
