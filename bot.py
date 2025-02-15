@@ -153,7 +153,24 @@ async def cancel_countdown(update: Update, context: CallbackContext):
     del active_countdowns[chat_id]
     await query.answer("❌ Countdown cancelled")
 
-# Run bot
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add_channel", add_channel))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
+    
+    # Callback handlers for buttons
+    app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+_\d+"))
+    app.add_handler(CallbackQueryHandler(modify_countdown, pattern=r"modify_\d+"))
+    app.add_handler(CallbackQueryHandler(pause_countdown, pattern=r"pause_\d+"))
+    app.add_handler(CallbackQueryHandler(resume_countdown, pattern=r"resume_\d+"))
+    app.add_handler(CallbackQueryHandler(cancel_countdown, pattern=r"cancel_\d+"))
+
+    print("Bot is running...")
+    app.run_polling()
+
 if __name__ == "__main__":
-    main()
+    main()  # ✅ This ensures the bot runs properly
+
 
