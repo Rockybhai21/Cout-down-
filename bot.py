@@ -134,16 +134,26 @@ async def countdown(chat_id):
             break
     del active_countdowns[chat_id]
 
-# Run bot
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("add_channel", add_channel))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
-    app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+_\d+"))
-    app.add_handler(CallbackQueryHandler(modify_countdown, pattern=r"modify_\d+"))
-    app.run_polling()
+# Pause, Resume, and Cancel Handlers
+async def pause_countdown(update: Update, context: CallbackContext):
+    query = update.callback_query
+    chat_id = int(query.data.split("_")[1])
+    active_countdowns[chat_id]["paused"] = True
+    await query.answer("⏸ Countdown paused")
 
+async def resume_countdown(update: Update, context: CallbackContext):
+    query = update.callback_query
+    chat_id = int(query.data.split("_")[1])
+    active_countdowns[chat_id]["paused"] = False
+    await query.answer("▶ Countdown resumed")
+
+async def cancel_countdown(update: Update, context: CallbackContext):
+    query = update.callback_query
+    chat_id = int(query.data.split("_")[1])
+    del active_countdowns[chat_id]
+    await query.answer("❌ Countdown cancelled")
+
+# Run bot
 if __name__ == "__main__":
     main()
 
