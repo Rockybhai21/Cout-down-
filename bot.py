@@ -173,7 +173,8 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    main()        active_countdowns[user_id] = {"message": message, "remaining": countdown_time, "paused": False}
+    main()        
+    active_countdowns[user_id] = {"message": message, "remaining": countdown_time, "paused": False}
         await context.bot.pin_chat_message(query.message.chat_id, message.message_id)
         await countdown(user_id)
         del user_time[user_id]
