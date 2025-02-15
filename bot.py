@@ -1,3 +1,4 @@
+import time
 import asyncio
 import logging
 import re
@@ -110,21 +111,30 @@ async def confirm_countdown(update: Update, context: CallbackContext) -> None:
 
 # Countdown function
 async def countdown(chat_id):
+    """Accurate countdown timer that waits exactly 1 second per iteration."""
     countdown_data = active_countdowns.get(chat_id)
     if not countdown_data:
         return
 
     message = countdown_data["message"]
+    start_time = time.time()  # Record the start time
+
     while countdown_data["remaining"] > 0:
         if countdown_data["paused"]:
             await asyncio.sleep(1)
             continue
 
-        await asyncio.sleep(1)
+        elapsed_time = time.time() - start_time
+        sleep_time = max(1 - (elapsed_time % 1), 0)  # Adjust sleep time to sync with real seconds
+
+        await asyncio.sleep(sleep_time)
         countdown_data["remaining"] -= 1
+        start_time = time.time()  # Reset start time for the next second
 
         try:
-            await message.edit_text(f"⏳ Countdown: {format_time(countdown_data['remaining'])}", parse_mode="HTML")
+            await message.edit_text(
+                f"⏳ Countdown: {format_time(countdown_data['remaining'])}", parse_mode="HTML"
+            )
         except Exception:
             break
 
