@@ -28,21 +28,6 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 authorized_channels = set()
 active_countdowns = {}
 
-# Fun facts and quotes
-FUN_FACTS = [
-    "Did you know? The first computer programmer was a woman named Ada Lovelace in the 1840s! 💻",
-    "Fun fact: The longest recorded countdown was over 50 years for a NASA mission! 🚀",
-    "Here's a fact: The first text message ever sent was 'Merry Christmas' in 1992. 📱",
-    "Did you know? The first website is still online: http://info.cern.ch 🌐",
-    "Fun fact: The first computer mouse was made of wood! 🖱️",
-]
-
-QUOTES = [
-    "Time is what we want most, but what we use worst. – William Penn ⏳",
-    "The future depends on what you do today. – Mahatma Gandhi 🌟",
-    "Time flies over us, but leaves its shadow behind. – Nathaniel Hawthorne 🕰️",
-]
-
 # Parse time input
 def parse_time_input(text):
     time_units = {"second": 1, "minute": 60, "hour": 3600, "day": 86400, "week": 604800}
@@ -61,14 +46,7 @@ def format_time(seconds):
 
 # Start command
 async def start(update: Update, context: CallbackContext) -> None:
-    welcome_message = (
-        "👋 Welcome to the Countdown Bot!\n\n"
-        "I can help you set countdowns in PMs, groups, and channels.\n\n"
-        "To set a countdown, send me the duration (e.g., '2 hours 30 minutes').\n\n"
-        f"💡 Fun Fact: {random.choice(FUN_FACTS)}\n\n"
-        f"📛 Quote of the Day: {random.choice(QUOTES)}"
-    )
-    await update.message.reply_text(welcome_message)
+    await update.message.reply_text("👋 Welcome! Use /add_channel to authorize a channel and start countdowns.")
 
 # Add authorized channel
 async def add_channel(update: Update, context: CallbackContext) -> None:
@@ -83,22 +61,43 @@ async def add_channel(update: Update, context: CallbackContext) -> None:
     authorized_channels.add(channel_id)
     await update.message.reply_text(f"✅ Channel {channel_id} authorized for countdowns.")
 
-# Handle countdown input
-async def countdown_input(update: Update, context: CallbackContext) -> None:
-    chat_id = update.message.chat.id
-    user_input = update.message.text
-    countdown_time = parse_time_input(user_input)
+# Start countdown in a channel
+async def start_channel_countdown(update: Update, context: CallbackContext) -> None:
+    if not context.args:
+        await update.message.reply_text("Usage: /start_channel_countdown <channel_id> <time>")
+        return
+    channel_id, *time_args = context.args
+    if channel_id not in authorized_channels:
+        await update.message.reply_text("❌ Channel not authorized.")
+        return
+    countdown_time = parse_time_input(" ".join(time_args))
     if countdown_time:
-        keyboard = [
-            [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{countdown_time}"),
-             InlineKeyboardButton("✏ Modify", callback_data=f"modify_{chat_id}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            f"You entered: {user_input}.\nConfirm countdown or modify?", reply_markup=reply_markup
-        )
+        message = await context.bot.send_message(channel_id, f"⏳ Countdown started for {format_time(countdown_time)}!")
+        active_countdowns[channel_id] = {"message": message, "remaining": countdown_time, "paused": False}
+        asyncio.create_task(countdown(channel_id))
     else:
         await update.message.reply_text("Invalid time format. Try again.")
+
+# Countdown logic
+async def countdown(chat_id):
+    countdown_data = active_countdowns.get(chat_id)
+    if not countdown_data:
+        return
+    message = countdown_data["message"]
+    while countdown_data["remaining"] > 0:
+        if countdown_data["paused"]:
+            await asyncio.sleep(1)
+            continue
+        await asyncio.sleep(1)
+        countdown_data["remaining"] -= 1
+        try:
+            await message.edit_text(f"⏳ Countdown: {format_time(countdown_data['remaining'])} remaining...")
+        except Exception as e:
+            logger.warning(f"Error updating countdown: {e}")
+            break
+    if chat_id in active_countdowns:
+        await message.reply_text("🎉 Time's up! 🎉")
+        del active_countdowns[chat_id]
 
 # Pause countdown
 async def pause_countdown(update: Update, context: CallbackContext):
@@ -129,7 +128,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add_channel", add_channel))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, countdown_input))
+    app.add_handler(CommandHandler("start_channel_countdown", start_channel_countdown))
     app.add_handler(CallbackQueryHandler(pause_countdown, pattern=r"pause_\d+"))
     app.add_handler(CallbackQueryHandler(resume_countdown, pattern=r"resume_\d+"))
     app.add_handler(CallbackQueryHandler(cancel_countdown, pattern=r"cancel_\d+"))
