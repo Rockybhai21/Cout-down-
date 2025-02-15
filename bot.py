@@ -92,7 +92,7 @@ async def countdown_input(update: Update, context: CallbackContext) -> None:
             InlineKeyboardButton("✏ Modify", callback_data=f"modify_{chat_id}")
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(f"You entered: <b>{format_time(countdown_time)}</b>", parse_mode="HTML", reply_markup=reply_markup)
+        await update.message.reply_text(f"You entered: {format_time(countdown_time)}", parse_mode="HTML", reply_markup=reply_markup)
     else:
         await update.message.reply_text("Invalid time format. Try again.")
 
@@ -133,25 +133,6 @@ async def countdown(chat_id):
         except Exception:
             break
     del active_countdowns[chat_id]
-
-# Pause, Resume, Cancel Handlers
-async def pause_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    chat_id = int(query.data.split("_")[1])
-    active_countdowns[chat_id]["paused"] = True
-    await query.answer("⏸ Countdown paused")
-
-async def resume_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    chat_id = int(query.data.split("_")[1])
-    active_countdowns[chat_id]["paused"] = False
-    await query.answer("▶ Countdown resumed")
-
-async def cancel_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    chat_id = int(query.data.split("_")[1])
-    del active_countdowns[chat_id]
-    await query.answer("❌ Countdown cancelled")
 
 # Run bot
 def main():
