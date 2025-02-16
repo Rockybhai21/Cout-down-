@@ -95,6 +95,7 @@ async def count_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⚠️ {message}\n\n"
             "Confirm or modify the countdown:",
             reply_markup=InlineKeyboardMarkup(keyboard)
+        )
     except Exception as e:
         await update.message.reply_text(
             "❗ Invalid format!\n"
