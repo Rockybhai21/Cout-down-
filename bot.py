@@ -162,6 +162,33 @@ async def update_countdown(key, context: ContextTypes.DEFAULT_TYPE):
         )
         del active_countdowns[key]
 
+# Handle Pause, Resume, and Cancel buttons
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    action, key = query.data.split('_', 1)
+    key = eval(key)  # Convert string back to tuple
+    
+    if action == "pause":
+        active_countdowns[key]['paused'] = True
+        await query.edit_message_text(
+            text=f"⏸️ <b>Countdown paused:</b>\n{format_duration(active_countdowns[key]['remaining'])}",
+            parse_mode="HTML"
+        )
+    elif action == "resume":
+        active_countdowns[key]['paused'] = False
+        await query.edit_message_text(
+            text=f"▶️ <b>Countdown resumed:</b>\n{format_duration(active_countdowns[key]['remaining'])}",
+            parse_mode="HTML"
+        )
+    elif action == "cancel":
+        del active_countdowns[key]
+        await query.edit_message_text(
+            text="❌ <b>Countdown canceled!</b>",
+            parse_mode="HTML"
+        )
+
 # Main function
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
@@ -169,6 +196,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("count", count_command))
     app.add_handler(CallbackQueryHandler(confirm_callback, pattern=r"confirm_"))
+    app.add_handler(CallbackQueryHandler(button_callback, pattern=r"pause_|resume_|cancel_"))
     
     app.run_polling()
 
