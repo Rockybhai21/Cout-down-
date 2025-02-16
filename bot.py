@@ -1,7 +1,4 @@
-import asyncio
-import logging
-import re
-import os
+import asyncmarkup=InlineKeyboardMarkup(keyboard)
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from dotenv import load_dotenv
@@ -102,6 +99,7 @@ async def handle_modify_input(update: Update, context: ContextTypes.DEFAULT_TYPE
                  f"⚠️ {message}\n\n"
                  "Confirm or modify the countdown:",
             reply_markup=InlineKeyboardMarkup(keyboard)
+        )
     except Exception as e:
         await update.message.reply_text(
             "❗ Invalid format!\n"
