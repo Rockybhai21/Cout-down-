@@ -170,6 +170,7 @@ async def update_countdown(key, context: ContextTypes.DEFAULT_TYPE):
                 text=f"⏲️ <b>Remaining: {format_duration(data['remaining'])}</b>",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(keyboard)
+            )
         except Exception as e:
             logger.error(f"Error updating countdown: {e}")
             break  # Exit if editing fails
