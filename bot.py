@@ -2,7 +2,6 @@ import asyncio
 import logging
 import re
 import os
-import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -52,8 +51,11 @@ async def start_countdown(update: Update, context: CallbackContext):
         return
     
     chat_id = update.message.chat_id
+    await update.message.reply_text(f"Countdown for\n⚠️ {custom_message}")
+    
+    await asyncio.sleep(1)  # Wait 1 second before sending countdown
     message = await update.message.reply_text(
-        f"⚠️ Alert {custom_message}\n⏳ Countdown: {format_time(countdown_time)}",
+        f"⏲️ Remaining: {format_time(countdown_time)}",
         parse_mode="HTML"
     )
     
@@ -62,29 +64,20 @@ async def start_countdown(update: Update, context: CallbackContext):
     
     keyboard = [
         [
-            InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{chat_id}_{countdown_time}"),
-            InlineKeyboardButton("✏ Modify", callback_data=f"modify_{chat_id}")
+            InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{chat_id}"),
+            InlineKeyboardButton("▶ Resume", callback_data=f"resume_{chat_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{chat_id}"),
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    confirm_message = await message.reply_text("🔹 Confirm or Modify:", reply_markup=reply_markup)
+    await message.edit_text(
+        f"⏲️ Remaining: {format_time(countdown_time)}",
+        parse_mode="HTML",
+        reply_markup=reply_markup
+    )
     
-    active_countdowns[chat_id] = {"message": message, "remaining": countdown_time, "paused": False, "confirm_message": confirm_message}
-
-# Handle confirm countdown
-async def confirm_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    chat_id = int(query.data.split("_")[1])
-    if chat_id in active_countdowns:
-        await active_countdowns[chat_id]["confirm_message"].delete()
-        asyncio.create_task(run_countdown(chat_id))
-
-# Handle modify countdown
-async def modify_countdown(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text("✏ Send the modified countdown time:")
+    active_countdowns[chat_id] = {"message": message, "remaining": countdown_time, "paused": False}
+    asyncio.create_task(run_countdown(chat_id))
 
 # Countdown function
 async def run_countdown(chat_id):
@@ -102,14 +95,21 @@ async def run_countdown(chat_id):
         countdown_data["remaining"] -= 1
         try:
             await message.edit_text(
-                f"⏳ Countdown: {format_time(countdown_data['remaining'])}",
-                parse_mode="HTML"
+                f"⏲️ Remaining: {format_time(countdown_data['remaining'])}",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{chat_id}"),
+                        InlineKeyboardButton("▶ Resume", callback_data=f"resume_{chat_id}"),
+                        InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{chat_id}"),
+                    ]
+                ])
             )
         except:
             break
 
     if chat_id in active_countdowns:
-        await message.reply_text("🎉 Time's up! Here's something interesting: The longest countdown ever lasted over 50 years! 🚀", parse_mode="HTML")
+        await message.reply_text("🎉 TIME'S UP!", parse_mode="HTML")
         del active_countdowns[chat_id]
 
 # Pause countdown
@@ -141,8 +141,6 @@ async def cancel_countdown(update: Update, context: CallbackContext):
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("count", start_countdown))
-    app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_\d+_\d+"))
-    app.add_handler(CallbackQueryHandler(modify_countdown, pattern=r"modify_\d+"))
     app.add_handler(CallbackQueryHandler(pause_countdown, pattern=r"pause_\d+"))
     app.add_handler(CallbackQueryHandler(resume_countdown, pattern=r"resume_\d+"))
     app.add_handler(CallbackQueryHandler(cancel_countdown, pattern=r"cancel_\d+"))
