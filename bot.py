@@ -82,7 +82,6 @@ async def count_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏳ Set {format_duration(duration)} countdown\n"
             f"📝 Message: {message}\n\n"
             "Confirm or modify the countdown:",
-        )
             reply_markup=InlineKeyboardMarkup(keyboard)
     except Exception as e:
         await update.message.reply_text(
@@ -189,55 +188,4 @@ async def update_countdown(key, context: ContextTypes.DEFAULT_TYPE):
         del active_countdowns[key]
 
 # Handle Pause, Resume, and Cancel buttons
-async def handle_controls(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    action, header_id = query.data.split('_')
-    header_id = int(header_id)
-    chat_id = query.message.chat_id
-    
-    # Find matching countdown
-    key = None
-    for k, v in active_countdowns.items():
-        if v['header_id'] == header_id and k[0] == chat_id:
-            key = k
-            break
-    
-    if not key:
-        return
-    
-    if action == "pause":
-        active_countdowns[key]['paused'] = True
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="⏸ <b>Countdown paused</b>",
-            parse_mode="HTML"
-        )
-    elif action == "resume":
-        active_countdowns[key]['paused'] = False
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="▶ <b>Countdown resumed</b>",
-            parse_mode="HTML"
-        )
-    elif action == "cancel":
-        if key in active_countdowns:
-            await context.bot.delete_message(chat_id, active_countdowns[key]['header_id'])
-            await context.bot.delete_message(chat_id, key[1])
-            del active_countdowns[key]
-
-# Main function
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("count", count_command))
-    app.add_handler(CallbackQueryHandler(confirm_callback, pattern=r"confirm_"))
-    app.add_handler(CallbackQueryHandler(modify_callback, pattern=r"modify_"))
-    app.add_handler(CallbackQueryHandler(handle_controls, pattern=r"(pause|resume|cancel)_\d+"))
-    
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+async def handle_controls(update: Update, context: Context
