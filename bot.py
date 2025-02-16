@@ -84,7 +84,7 @@ async def countdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏲️ <b>Remaining: {format_duration(duration)}</b>",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(keyboard)
-        
+        )
         # Pin countdown after 3 seconds
         await asyncio.sleep(3)
         await context.bot.pin_chat_message(update.message.chat_id, countdown_msg.message_id)
