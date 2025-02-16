@@ -84,6 +84,7 @@ async def countdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏲️ <b>Remaining: {format_duration(duration)}</b>",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         
         # Pin countdown after 3 seconds (only in groups)
         if update.message.chat.type in ["group", "supergroup"]:
@@ -97,11 +98,12 @@ async def countdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'paused': False,
             'header_id': header_msg.message_id,
             'countdown_id': countdown_msg.message_id,
-            'message': message
+            'message': message,
+            'task': None  # Store the countdown task
         }
         
         # Start countdown task
-        asyncio.create_task(update_countdown(key, context))
+        active_countdowns[key]['task'] = asyncio.create_task(update_countdown(key, context))
     except Exception as e:
         await update.message.reply_text(
             "❗ Invalid format!\n"
@@ -129,7 +131,8 @@ async def update_countdown(key, context: ContextTypes.DEFAULT_TYPE):
                 message_id=active_countdowns[key]['countdown_id'],
                 text=f"⏲️ <b>Remaining: {format_duration(active_countdowns[key]['remaining'])}</b>",
                 parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(keyboard))
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
         except Exception as e:
             logger.error(f"Error updating countdown: {e}")
             break  # Exit if editing fails
@@ -160,15 +163,25 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         active_countdowns[key]['paused'] = True
         await query.edit_message_text(
             text=f"⏸️ <b>Countdown paused at:</b>\n{format_duration(active_countdowns[key]['remaining'])}",
-            parse_mode="HTML"
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("▶ Resume", callback_data=f"resume_{key}"),
+                 InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{key}")]
+            ])
         )
     elif action == "resume":
         active_countdowns[key]['paused'] = False
         await query.edit_message_text(
             text=f"▶️ <b>Countdown resumed at:</b>\n{format_duration(active_countdowns[key]['remaining'])}",
-            parse_mode="HTML"
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{key}"),
+                 InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{key}")]
+            ])
         )
     elif action == "cancel":
+        if active_countdowns[key]['task']:
+            active_countdowns[key]['task'].cancel()  # Cancel the countdown task
         del active_countdowns[key]
         await query.edit_message_text(
             text="❌ <b>Countdown canceled!</b>",
