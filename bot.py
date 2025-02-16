@@ -50,6 +50,11 @@ def format_duration(seconds: int) -> str:
             result.append(f"{period_value} {period_name}{'s' if period_value != 1 else ''}")
     return ' '.join(result) or "0 seconds"
 
+# Handle Modify button
+async def modify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
