@@ -2,83 +2,99 @@ import asyncio
 import logging
 import re
 import os
-import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, CallbackContext
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from dotenv import load_dotenv
 
-# Enable logging
+# Configuration
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-# Store active countdowns with (chat_id, message_id) as key
+# Global storage using dictionary
 active_countdowns = {}
 
-# Fun facts and quotes
-FUN_FACTS = [ 
-    # Keep previous fun facts list
-]
+def parse_duration(text: str) -> int:
+    units = {
+        's': 1, 'sec': 1, 'second': 1, 'seconds': 1,
+        'm': 60, 'min': 60, 'minute': 60, 'minutes': 60,
+        'h': 3600, 'hr': 3600, 'hour': 3600, 'hours': 3600,
+        'd': 86400, 'day': 86400, 'days': 86400
+    }
+    
+    pattern = r'(\d+)\s*([a-zA-Z]+)'
+    matches = re.findall(pattern, text)
+    
+    total = 0
+    for value, unit in matches:
+        unit = unit.lower().rstrip('s')  # Handle plurals
+        if unit in units:
+            total += int(value) * units[unit]
+    return total
 
-QUOTES = [
-    # Keep previous quotes list
-]
+def format_duration(seconds: int) -> str:
+    periods = [
+        ('day', 86400),
+        ('hour', 3600),
+        ('minute', 60),
+        ('second', 1)
+    ]
+    result = []
+    for period_name, period_seconds in periods:
+        if seconds >= period_seconds:
+            period_value, seconds = divmod(seconds, period_seconds)
+            result.append(f"{period_value} {period_name}{'s' if period_value != 1 else ''}")
+    return ' '.join(result) or "0 seconds"
 
-def parse_time_input(text):
-    time_units = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
-    matches = re.findall(r"(\d+)(s|m|h|d|w)", text)
-    return sum(int(amt) * time_units[unit] for amt, unit in matches) if matches else None
-
-def format_time(seconds):
-    # Keep previous format_time function
-    pass
-
-async def start(update: Update, context: CallbackContext):
-    welcome_msg = (
-        "👋 Welcome!\nUse /count [time][unit] [message]\n"
-        "Example: /count 2h30m Quiz starting soon!"
-    )
-    await update.message.reply_text(welcome_msg)
-
-async def count_command(update: Update, context: CallbackContext):
+async def start_countdown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        args = update.message.text.split()[1:]
-        time_part = "".join([x for x in args if any(c in x for c in ['s','m','h','d','w'])])
-        message = " ".join([x for x in args if not any(c in x for c in ['s','m','h','d','w'])])
+        args = context.args
+        if len(args) < 2:
+            raise ValueError
         
-        duration = parse_time_input(time_part)
+        duration_text = ' '.join(args[:-1])
+        message = args[-1]
+        
+        duration = parse_duration(duration_text)
         if not duration:
             raise ValueError
 
         keyboard = [
-            [InlineKeyboardButton("✅ Start Countdown", callback_data=f"confirm_{duration}_{message}")]
+            [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{duration}_{message}")]
         ]
         await update.message.reply_text(
-            f"⏳ Set {format_time(duration)} countdown with message:\n{message}",
+            f"🚀 Set {format_duration(duration)} countdown\n📝 Message: {message}",
             reply_markup=InlineKeyboardMarkup(keyboard)
+            
+    except Exception as e:
+        await update.message.reply_text(
+            "❗ Invalid format!\n"
+            "Use: /count <time> <message>\n"
+            "Example: /count 2h30m 5minutes QuizTime!"
         )
-    except:
-        await update.message.reply_text("Invalid format! Use: /count 1h30m Your message here")
 
-async def confirm_countdown(update: Update, context: CallbackContext):
+async def confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    _, duration, message = query.data.split('_')
+    _, duration, message = query.data.split('_', 2)
     duration = int(duration)
+    chat_id = query.message.chat_id
     
-    msg = await query.message.reply_text(f"⏳ Starting countdown: {message}")
+    # Create countdown message
+    msg = await query.message.reply_text(
+        f"⏳ Countdown Started!\n"
+        f"📝 {message}\n"
+        f"⏲️ Remaining: {format_duration(duration)}"
+    )
     
     # Store countdown with composite key
-    key = (msg.chat.id, msg.message_id)
+    key = (chat_id, msg.message_id)
     active_countdowns[key] = {
-        "remaining": duration,
-        "paused": False,
-        "message": msg,
-        "custom_text": message
+        'remaining': duration,
+        'paused': False,
+        'message': message
     }
     
     # Add control buttons
@@ -89,60 +105,83 @@ async def confirm_countdown(update: Update, context: CallbackContext):
     ]
     await msg.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
     
-    asyncio.create_task(run_countdown(key))
+    # Pin message after 3 seconds
+    await asyncio.sleep(3)
+    try:
+        await context.bot.pin_chat_message(chat_id, msg.message_id)
+    except Exception as e:
+        logger.error(f"Error pinning message: {e}")
+    
+    # Start countdown task
+    asyncio.create_task(update_countdown(key))
 
-async def run_countdown(key):
-    data = active_countdowns.get(key)
-    while data and data["remaining"] > 0:
-        if data["paused"]:
+async def update_countdown(key):
+    while True:
+        data = active_countdowns.get(key)
+        if not data or data['remaining'] <= 0:
+            break
+            
+        if data['paused']:
             await asyncio.sleep(1)
             continue
             
-        await asyncio.sleep(1)
-        data["remaining"] -= 1
+        data['remaining'] -= 1
         
         try:
-            await data["message"].edit_text(
-                f"⏳ {data['custom_text']}\n"
-                f"Time remaining: {format_time(data['remaining'])}"
+            await context.bot.edit_message_text(
+                chat_id=key[0],
+                message_id=key[1],
+                text=(
+                    f"⏳ Active Countdown\n"
+                    f"📝 {data['message']}\n"
+                    f"⏲️ Remaining: {format_duration(data['remaining'])}"
+                ),
+                reply_markup=InlineKeyboardMarkup([[ # Preserve buttons
+                    InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{key[1]}"),
+                    InlineKeyboardButton("▶ Resume", callback_data=f"resume_{key[1]}"),
+                    InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{key[1]}")
+                ]])
             )
         except Exception as e:
             logger.error(f"Error updating countdown: {e}")
-            break
-
+        
+        await asyncio.sleep(1)
+    
     if key in active_countdowns:
-        await data["message"].edit_text(f"🎉 TIME'S UP! {data['custom_text']}")
+        await context.bot.edit_message_text(
+            chat_id=key[0],
+            message_id=key[1],
+            text=f"🎉 Time's Up!\n{data['message']}"
+        )
         del active_countdowns[key]
 
-async def handle_control(update: Update, context: CallbackContext):
+async def handle_controls(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    action, msg_id = query.data.split('_')
-    msg_id = int(msg_id)
-    key = (query.message.chat.id, msg_id)
+    action, message_id = query.data.split('_')
+    message_id = int(message_id)
+    key = (query.message.chat_id, message_id)
     
     if key not in active_countdowns:
         return
-
+    
     if action == "pause":
-        active_countdowns[key]["paused"] = True
+        active_countdowns[key]['paused'] = True
         await query.message.reply_text("⏸ Countdown paused")
     elif action == "resume":
-        active_countdowns[key]["paused"] = False
+        active_countdowns[key]['paused'] = False
         await query.message.reply_text("▶ Countdown resumed")
     elif action == "cancel":
-        await query.message.reply_text("❌ Countdown cancelled")
-        await active_countdowns[key]["message"].delete()
+        await context.bot.delete_message(key[0], key[1])
         del active_countdowns[key]
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("count", count_command))
-    app.add_handler(CallbackQueryHandler(confirm_countdown, pattern=r"confirm_"))
-    app.add_handler(CallbackQueryHandler(handle_control, pattern=r"(pause|resume|cancel)_\d+"))
+    app.add_handler(CommandHandler("count", start_countdown))
+    app.add_handler(CallbackQueryHandler(confirm_callback, pattern=r"confirm_"))
+    app.add_handler(CallbackQueryHandler(handle_controls, pattern=r"(pause|resume|cancel)_\d+"))
     
     app.run_polling()
 
