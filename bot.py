@@ -3,8 +3,7 @@ import logging
 import re
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
-from telegram.constants import ChatType
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from dotenv import load_dotenv
 
 # Configuration
@@ -22,8 +21,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👋 Welcome to the Countdown Bot!\n\n"
         "Use /countdown <time> <message> to start a countdown.\n"
         "Example: /countdown 2m Quiz starts!\n\n"
-        "⏲️ Supported time formats: seconds (s), minutes (m), hours (h), days (d).\n"
-        "Example: 10s, 2m, 1h 30m, 1d 2h 30m."
+        "⏲️ Supported time formats:\n"
+        "- Seconds: `10s`\n"
+        "- Minutes: `2m`\n"
+        "- Hours: `1h`\n"
+        "- Days: `1d`\n"
+        "- Combined: `1h 30m` or `1d 2h 30m`\n\n"
+        "📢 The bot works in both private messages and groups.\n"
+        "✅ Use /countdown to get started!"
     )
 
 # Parse time input (e.g., "2m", "1h 30m")
@@ -41,11 +46,6 @@ def format_duration(seconds: int) -> str:
 
 # Handle /countdown command
 async def countdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Check if the command is used in a group or supergroup
-    if update.message.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
-        await update.message.reply_text("❌ This command can only be used in groups.")
-        return
-    
     try:
         args = context.args
         if not args:
@@ -84,10 +84,11 @@ async def countdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏲️ <b>Remaining: {format_duration(duration)}</b>",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        # Pin countdown after 3 seconds
-        await asyncio.sleep(3)
-        await context.bot.pin_chat_message(update.message.chat_id, countdown_msg.message_id)
+        
+        # Pin countdown after 3 seconds (only in groups)
+        if update.message.chat.type in ["group", "supergroup"]:
+            await asyncio.sleep(3)
+            await context.bot.pin_chat_message(update.message.chat_id, countdown_msg.message_id)
         
         # Store countdown
         key = update.message.chat_id
