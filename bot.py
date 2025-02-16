@@ -54,7 +54,7 @@ def format_duration(seconds: int) -> str:
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🌹 Welcome to the Countdown Bot!\n\n"
+        "👋 Welcome to the Countdown Bot!\n\n"
         "Use /count <time> <message> to start a countdown.\n"
         "Example: /count 2 minutes Quiz starts!"
     )
@@ -101,7 +101,6 @@ async def count_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⚠️ {message}\n\n"
             "Confirm or modify the countdown:",
             reply_markup=InlineKeyboardMarkup(keyboard)
-        )
     except Exception as e:
         await update.message.reply_text(
             "❗ Invalid format!\n"
