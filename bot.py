@@ -53,7 +53,7 @@ def format_duration(seconds: int) -> str:
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Welcome to the Countdown Bot!\n\n"
+        "🌹 Welcome to the Countdown Bot!\n\n"
         "Use /count <time> <message> to start a countdown.\n"
         "Example: /count 2 minutes Quiz starts!"
     )
