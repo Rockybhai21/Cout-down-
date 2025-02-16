@@ -1,82 +1,137 @@
+import asyncio
+import logging
+import re
 import os
+import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
-import json
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
+    CallbackContext,
+)
+from dotenv import load_dotenv
 
-# Dictionary to store quizzes
-quizzes = {}
+# Enable logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# Command to create a quiz
-def create_quiz(update: Update, context: CallbackContext) -> None:
-    user_id = update.message.from_user.id
-    text = update.message.text.replace('/quiz ', '').strip()
+# Load environment variables
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+# Store active countdowns
+active_countdowns = {}  # {chat_id: {message: Message, remaining: int, paused: bool}}
+
+# Function to parse custom time input like "5 minutes Quiz starts soon!"
+def parse_time_input(text):
+    time_units = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}
+    total_seconds = 0
+    matches = re.findall(r"(\d+)\s*(seconds?|minutes?|hours?|days?)", text, re.IGNORECASE)
+    for amount, unit in matches:
+        total_seconds += int(amount) * time_units[unit.lower().rstrip("s")]
+    return total_seconds if total_seconds > 0 else None
+
+# Function to format time
+def format_time(seconds):
+    minutes, seconds = divmod(seconds, 60)
+    return f"<b>{minutes}m {seconds}s</b>" if minutes else f"<b>{seconds}s</b>"
+
+# Start countdown command
+async def start_countdown(update: Update, context: CallbackContext):
+    text = update.message.text[len("/count "):]
+    countdown_time = parse_time_input(text)
+    custom_message = text.split(maxsplit=1)[1] if " " in text else ""
     
-    if '✅' not in text:
-        update.message.reply_text("Please mark the correct answer with '✅'.")
+    if not countdown_time:
+        await update.message.reply_text("❌ Invalid time format! Use `/count 5 minutes Quiz starts soon!`")
         return
     
-    parts = text.split('\n')
-    question = parts[0]
-    options = [opt.replace('✅', '').strip() for opt in parts[1:]]
-    correct_option = next((i for i, opt in enumerate(parts[1:]) if '✅' in opt), None)
+    chat_id = update.message.chat_id
+    message = await update.message.reply_text(
+        f"⏳ Countdown started: {format_time(countdown_time)}\n{custom_message}",
+        parse_mode="HTML"
+    )
     
-    if correct_option is None:
-        update.message.reply_text("No correct answer marked. Use '✅' to mark the correct answer.")
-        return
+    await asyncio.sleep(3)  # Wait 3 seconds before pinning
+    await context.bot.pin_chat_message(chat_id, message.message_id)
     
-    quiz_id = f"quiz_{user_id}_{len(quizzes) + 1}"
-    quizzes[quiz_id] = {"question": question, "options": options, "correct": correct_option}
+    keyboard = [
+        [
+            InlineKeyboardButton("⏸ Pause", callback_data=f"pause_{chat_id}"),
+            InlineKeyboardButton("▶ Resume", callback_data=f"resume_{chat_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{chat_id}"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await message.reply_text("🔹 Control Countdown:", reply_markup=reply_markup)
     
-    update.message.reply_text(f"Quiz saved with ID: {quiz_id}. Use /startquiz {quiz_id} to begin.")
+    active_countdowns[chat_id] = {"message": message, "remaining": countdown_time, "paused": False}
+    asyncio.create_task(run_countdown(chat_id, custom_message))
 
-# Start the quiz
-def start_quiz(update: Update, context: CallbackContext) -> None:
-    args = context.args
-    if not args:
-        update.message.reply_text("Usage: /startquiz <quiz_id>")
+# Countdown function
+async def run_countdown(chat_id, custom_message):
+    countdown_data = active_countdowns.get(chat_id)
+    if not countdown_data:
         return
-    
-    quiz_id = args[0]
-    if quiz_id not in quizzes:
-        update.message.reply_text("Quiz not found.")
-        return
-    
-    quiz = quizzes[quiz_id]
-    buttons = [[InlineKeyboardButton(opt, callback_data=f"{quiz_id}_{i}")] for i, opt in enumerate(quiz['options'])]
-    reply_markup = InlineKeyboardMarkup(buttons)
-    update.message.reply_text(quiz['question'], reply_markup=reply_markup)
 
-# Handle answer selection
-def handle_answer(update: Update, context: CallbackContext) -> None:
+    message = countdown_data["message"]
+    while countdown_data["remaining"] > 0:
+        if countdown_data["paused"]:
+            await asyncio.sleep(1)
+            continue
+
+        await asyncio.sleep(1)
+        countdown_data["remaining"] -= 1
+        try:
+            await message.edit_text(
+                f"⏳ Countdown: {format_time(countdown_data['remaining'])}\n{custom_message}",
+                parse_mode="HTML"
+            )
+        except:
+            break
+
+    if chat_id in active_countdowns:
+        await message.reply_text("🎉 Time's up! Here's something interesting: The longest countdown ever lasted over 50 years! 🚀", parse_mode="HTML")
+        del active_countdowns[chat_id]
+
+# Pause countdown
+async def pause_countdown(update: Update, context: CallbackContext):
     query = update.callback_query
-    query.answer()
-    quiz_id, selected = query.data.rsplit('_', 1)
-    selected = int(selected)
-    quiz = quizzes.get(quiz_id)
-    
-    if quiz:
-        if selected == quiz['correct']:
-            query.edit_message_text(f"✅ Correct! {quiz['question']}")
-        else:
-            query.edit_message_text(f"❌ Wrong! Correct answer: {quiz['options'][quiz['correct']]}")
-    else:
-        query.edit_message_text("Quiz not found.")
+    chat_id = int(query.data.split("_")[1])
+    if chat_id in active_countdowns:
+        active_countdowns[chat_id]["paused"] = True
+        await query.answer("⏸ Countdown Paused")
 
-# Main function to run the bot
+# Resume countdown
+async def resume_countdown(update: Update, context: CallbackContext):
+    query = update.callback_query
+    chat_id = int(query.data.split("_")[1])
+    if chat_id in active_countdowns:
+        active_countdowns[chat_id]["paused"] = False
+        await query.answer("▶ Countdown Resumed")
+
+# Cancel countdown
+async def cancel_countdown(update: Update, context: CallbackContext):
+    query = update.callback_query
+    chat_id = int(query.data.split("_")[1])
+    if chat_id in active_countdowns:
+        del active_countdowns[chat_id]
+        await query.answer("❌ Countdown Cancelled")
+        await query.message.reply_text("❌ Countdown has been cancelled!")
+
+# Run bot
 def main():
-    bot_token = os.getenv("BOT_TOKEN")
-    if not bot_token:
-        raise ValueError("BOT_TOKEN environment variable is not set")
-    
-    updater = Updater(bot_token, use_context=True)
-    dp = updater.dispatcher
-    
-    dp.add_handler(CommandHandler("quiz", create_quiz))
-    dp.add_handler(CommandHandler("startquiz", start_quiz))
-    dp.add_handler(CallbackQueryHandler(handle_answer))
-    
-    updater.start_polling()
-    updater.idle()
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("count", start_countdown))
+    app.add_handler(CallbackQueryHandler(pause_countdown, pattern=r"pause_\d+"))
+    app.add_handler(CallbackQueryHandler(resume_countdown, pattern=r"resume_\d+"))
+    app.add_handler(CallbackQueryHandler(cancel_countdown, pattern=r"cancel_\d+"))
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
