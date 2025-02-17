@@ -145,7 +145,7 @@ async def update_countdown(key, context: ContextTypes.DEFAULT_TYPE):
             await asyncio.sleep(1)
             continue
         
-        active_countdowns[key]['remaining'] -= 1
+        active_countdowns[key]['remaining'] -= 5
         
         try:
             keyboard = [
