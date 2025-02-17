@@ -163,8 +163,8 @@ async def update_countdown(key, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Error updating countdown: {e}")
             break  # Exit if editing fails
         
-        await asyncio.sleep(1)  # Ensure countdown updates every second
-    
+        await asyncio.sleep(5)  # Update every 5 seconds to avoid flood control
+
     if key in active_countdowns:
         await context.bot.send_message(
             chat_id=int(key.split('_')[0]),
@@ -282,7 +282,10 @@ def main():
     app.add_handler(CallbackQueryHandler(confirm_callback, pattern=r"confirm_"))
     app.add_handler(CallbackQueryHandler(modify_callback, pattern=r"modify"))
     app.add_handler(CallbackQueryHandler(button_callback, pattern=r"pause_|resume_|cancel_"))
-
+    
+    # Ignore all other messages
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda update, context: None))
+    
     app.run_polling()
 
 if __name__ == "__main__":
