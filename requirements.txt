@@ -3,3 +3,5 @@ python-telegram-bot==20.0
 python-dotenv
 Flask
 gunicorn
+python-telegram-bot[webhooks]
+
