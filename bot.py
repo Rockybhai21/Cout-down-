@@ -23,21 +23,26 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Use /countdown <time> <message> to start a countdown.\n"
         "Example: /countdown 2m Quiz starts!\n\n"
         "⏲️ Supported time formats:\n"
-        "- Seconds: `10s`\n"
-        "- Minutes: `2m`\n"
-        "- Hours: `1h`\n"
-        "- Days: `1d`\n"
-        "- Combined: `1h 30m` or `1d 2h 30m`\n\n"
+        "- Seconds: `10s`, `10 seconds`\n"
+        "- Minutes: `2m`, `2 minutes`\n"
+        "- Hours: `1h`, `1 hour`\n"
+        "- Days: `1d`, `1 day`\n"
+        "- Combined: `1h 30m`, `1d 2h 30m`\n\n"
         "📢 The bot works in both private messages and groups.\n"
         "✅ Use /countdown to get started!"
     )
 
-# Parse time input (e.g., "2m", "1h 30m")
+# Parse time input (e.g., "2m", "1h 30m", "2 minutes")
 def parse_duration(text: str) -> int:
-    time_units = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}
-    pattern = r'(\d+)\s*([smhd])'
+    time_units = {
+        'second': 1, 'seconds': 1, 'sec': 1, 's': 1,
+        'minute': 60, 'minutes': 60, 'min': 60, 'm': 60,
+        'hour': 3600, 'hours': 3600, 'hr': 3600, 'h': 3600,
+        'day': 86400, 'days': 86400, 'd': 86400
+    }
+    pattern = r'(\d+)\s*([a-zA-Z]+)'
     matches = re.findall(pattern, text.lower())
-    return sum(int(value) * time_units[unit] for value, unit in matches)
+    return sum(int(value) * time_units[unit.rstrip('s')] for value, unit in matches)
 
 # Format time in minutes and seconds
 def format_duration(seconds: int) -> str:
@@ -54,7 +59,7 @@ async def countdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Extract time and message
         input_text = ' '.join(args)
-        time_match = re.search(r'\d+\s*[smhd]', input_text, re.IGNORECASE)
+        time_match = re.search(r'\d+\s*[a-zA-Z]+', input_text, re.IGNORECASE)
         
         if not time_match:
             raise ValueError
@@ -78,7 +83,7 @@ async def countdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏳ Set {format_duration(duration)} countdown\n"
             f"⚠️ {message}\n\n"
             "Confirm or modify the countdown:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
         await update.message.reply_text(
             "❗ Invalid format!\n"
@@ -110,7 +115,7 @@ async def confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     countdown_msg = await query.message.reply_text(
         f"⏲️ <b>Remaining: {format_duration(duration)}</b>",
         parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(keyboard))
     
     # Pin countdown after 3 seconds (only in groups)
     if query.message.chat.type in ["group", "supergroup"]:
@@ -151,7 +156,7 @@ async def update_countdown(key, context: ContextTypes.DEFAULT_TYPE):
                 message_id=active_countdowns[key]['countdown_id'],
                 text=f"⏲️ <b>Remaining: {format_duration(active_countdowns[key]['remaining'])}</b>",
                 parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                reply_markup=InlineKeyboardMarkup(keyboard))
         except Exception as e:
             logger.error(f"Error updating countdown: {e}")
             break  # Exit if editing fails
@@ -188,7 +193,7 @@ async def handle_modify_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         input_text = update.message.text
         
         # Match time formats (e.g., "2h 30m", "10s", "1 hour 30 minutes")
-        time_pattern = r'(\d+\s*(?:seconds?|sec|s|minutes?|min|m|hours?|hr|h|days?|d)\s*)+'
+        time_pattern = r'(\d+)\s*([a-zA-Z]+)'
         time_match = re.search(time_pattern, input_text, re.IGNORECASE)
         
         if not time_match:
