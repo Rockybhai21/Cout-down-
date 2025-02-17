@@ -26,7 +26,7 @@ active_countdowns = {}
 # Start command
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Welcome to the Countdown Bot!\n\n"
+        "🌹 Welcome to the Countdown Bot!\n\n"
         "Use /countdown <time> <message> to start a countdown.\n"
         "Example: /countdown 2m Quiz starts!\n\n"
         "⏲️ Supported time formats:\n"
