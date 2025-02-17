@@ -284,7 +284,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_callback, pattern=r"pause_|resume_|cancel_"))
     
     # Ignore all other messages
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda update, context: None))
+     
     
     app.run_polling()
 
